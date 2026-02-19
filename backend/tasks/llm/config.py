@@ -4,7 +4,7 @@ import os
 
 # Model configurations
 DEFAULT_MODEL = "gpt-4o"
-ANALYST_V2_MODEL = "claude-sonnet-4-5-20250929"
+ANALYST_V2_MODEL = "gemini/gemini-2.5-flash"
 
 # Token and step limits
 MAX_TOKENS = 4000
