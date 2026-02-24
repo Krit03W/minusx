@@ -1,15 +1,15 @@
 'use client';
 
-import { useState, useCallback, useEffect, MutableRefObject, useMemo } from 'react';
-import { Box, Button, Dialog, HStack, Text, VStack } from '@chakra-ui/react';
+import { useState, useCallback, useEffect, MutableRefObject } from 'react';
+import { Box, Button, Dialog, HStack, Input, Text, VStack } from '@chakra-ui/react';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { useFile } from '@/lib/hooks/file-state-hooks';
-import { editFile, publishFile, clearFileChanges, createVirtualFile } from '@/lib/api/file-state';
+import { editFile, clearFileChanges, createVirtualFile } from '@/lib/api/file-state';
 import { useQueryResult } from '@/lib/hooks/file-state-hooks';
-import { selectIsDirty, selectMergedContent, selectEffectiveName, setEphemeral, deleteFile } from '@/store/filesSlice';
+import { selectIsDirty, selectMergedContent, selectEffectiveName, setEphemeral } from '@/store/filesSlice';
+import { setFileEditMode } from '@/store/uiSlice';
 import { QuestionContent } from '@/lib/types';
 import QuestionViewV2 from '@/components/views/QuestionViewV2';
-import { isUserFacingError } from '@/lib/errors';
 
 interface CreateQuestionModalContainerProps {
   isOpen: boolean;
@@ -50,8 +50,6 @@ export default function CreateQuestionModalContainer({
   // Use useFile hook for state management (skip if no ID yet)
   const { fileState: file } = useFile(effectiveId) ?? {};
   const fileLoading = !file || file.loading;
-  const saving = file?.saving ?? false;
-  const error = file?.loadError ?? null;
   const isDirty = useAppSelector(state => effectiveId ? selectIsDirty(state, effectiveId) : false);
   const mergedContent = useAppSelector(state => effectiveId ? selectMergedContent(state, effectiveId) as QuestionContent | undefined : undefined);
   const effectiveName = useAppSelector(state => effectiveId ? selectEffectiveName(state, effectiveId) || '' : '');
@@ -82,6 +80,13 @@ export default function CreateQuestionModalContainer({
 
   // Don't use useEffect for cleanup - it causes unmount issues
   // Instead, cleanup in the cancel/close handlers
+
+  // Always in edit mode in this modal (allows reference removal, editable viz)
+  useEffect(() => {
+    if (typeof effectiveId === 'number') {
+      dispatch(setFileEditMode({ fileId: effectiveId, editMode: true }));
+    }
+  }, [effectiveId, dispatch]);
 
   // Set initial lastExecuted (only once when file is ready)
   useEffect(() => {
@@ -133,39 +138,26 @@ export default function CreateQuestionModalContainer({
     }));
   }, [mergedContent, effectiveId, dispatch]);
 
-  // Handle save
-  // Note: Name/description validation is handled by DocumentHeader
-  const handleSave = useCallback(async () => {
-    if (!mergedContent || !file || typeof effectiveId !== 'number') return;
-
+  // Create mode: "Add" — stages the virtual question in Redux, notifies parent, closes.
+  // No API call — the question will be published later via "Publish All".
+  const handleAdd = useCallback(() => {
+    if (typeof effectiveId !== 'number') return;
     setSaveError(null);
+    onQuestionCreated(effectiveId); // passes the (negative) virtual ID to parent
+    setShowConfirmClose(false);
+    onClose();
+  }, [effectiveId, onQuestionCreated, onClose]);
 
-    try {
-      const result = await publishFile({ fileId: effectiveId });
+  // Edit mode: "Update" — changes are already staged in Redux via editFile() calls.
+  // No API call — the question will be published later via "Publish All".
+  const handleUpdate = useCallback(() => {
+    setShowConfirmClose(false);
+    onClose();
+  }, [onClose]);
 
-      // Ensure save was successful and returned a result
-      if (!result || typeof result.id !== 'number') {
-        throw new Error('Save failed to return a valid file ID');
-      }
-
-      // NOTE: Don't cleanup virtual file with deleteFile because empty path causes issues
-      // The virtual file will remain in Redux but that's fine - it's harmless
-
-      // Call parent callback with new question ID
-      onQuestionCreated(result.id);
-
-      // Close modal
-      onClose();
-    } catch (error) {
-      if (isUserFacingError(error)) {
-        setSaveError(error.message);
-        return;
-      }
-
-      console.error('Failed to save question:', error);
-      setSaveError('An unexpected error occurred. Please try again.');
-    }
-  }, [mergedContent, effectiveId, onQuestionCreated, onClose]);
+  const isCreateMode = questionId === undefined;
+  const primaryActionLabel = isCreateMode ? 'Add' : 'Update';
+  const handlePrimaryAction = isCreateMode ? handleAdd : handleUpdate;
 
   // Handle cancel
   const handleCancel = useCallback(() => {
@@ -219,24 +211,52 @@ export default function CreateQuestionModalContainer({
         height="100%"
         overflow="hidden"
       >
+        {/* Modal header: name input + save/cancel (replaces DocumentHeader which lives in FileView) */}
+        <HStack
+          px={3}
+          py={2}
+          borderBottomWidth="1px"
+          borderColor="border.muted"
+          gap={2}
+          flexShrink={0}
+        >
+          <Box flex={1}>
+            <Input
+              value={effectiveName}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleMetadataChange({ name: e.target.value })}
+              placeholder="Question name..."
+              size="sm"
+              variant="flushed"
+              fontWeight="semibold"
+            />
+          </Box>
+          {saveError && (
+            <Text fontSize="xs" color="accent.danger" flexShrink={0}>{saveError}</Text>
+          )}
+          <Button size="sm" variant="ghost" onClick={handleCancel} flexShrink={0}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            bg="accent.teal"
+            color="white"
+            onClick={handlePrimaryAction}
+            flexShrink={0}
+          >
+            {primaryActionLabel}
+          </Button>
+        </HStack>
+
         <QuestionViewV2
           viewMode="page"
-          fileName={effectiveName}
           content={mergedContent}
+          questionId={typeof effectiveId === 'number' ? effectiveId : undefined}
           queryData={queryData}
           queryLoading={queryLoading}
           queryError={queryError}
           queryStale={queryStale}
-          editMode={true}
-          isDirty={isDirty}
-          isSaving={saving}
-          saveError={saveError}
           onChange={handleChange}
-          onMetadataChange={handleMetadataChange}
           onExecute={handleExecute}
-          onSave={handleSave}
-          onCancel={handleCancel}
-          onEditModeChange={() => {}} // No-op in create mode
         />
       </Box>
 
@@ -263,15 +283,13 @@ export default function CreateQuestionModalContainer({
             <Dialog.Footer>
               <VStack align="stretch" gap={3} width="100%">
                 <Button
-                  onClick={handleSave}
-                  disabled={saving}
-                  loading={saving}
+                  onClick={handlePrimaryAction}
                   bg="accent.teal"
                   color="white"
                   _hover={{ bg: 'accent.teal', opacity: 0.9 }}
                   width="100%"
                 >
-                  Save & Close
+                  {primaryActionLabel} & Close
                 </Button>
                 <HStack gap={2} width="100%">
                   <Button

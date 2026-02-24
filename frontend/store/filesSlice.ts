@@ -4,6 +4,12 @@ import type { FileInfo } from '@/lib/data/types';
 import type { RootState } from './store';
 import { getQueryHash } from '@/lib/utils/query-hash';
 import type { LoadError } from '@/lib/types/errors';
+import { replaceNegativeIdsInContent } from '@/lib/data/helpers/replace-references';
+
+// System file types that save in-place and are excluded from bulk Publish.
+// Defined as a Set here (instead of importing from file-metadata) to avoid
+// circular-dependency issues between store and ui modules.
+const SYSTEM_FILE_TYPES_SET = new Set<string>(['connection', 'config', 'styles', 'context']);
 
 /**
  * Ephemeral changes - non-persistent state like lastExecuted query
@@ -820,6 +826,41 @@ const filesSlice = createSlice({
         ...changes,
         references: currentRefs.filter((ref: QuestionReference) => ref.id !== referencedQuestionId)
       };
+    },
+
+    /**
+     * Atomically replace virtual (negative) IDs with real (positive) IDs across
+     * all dirty real files in Redux.
+     *
+     * Called by publishAll() after batch-creating virtual files — rewrites any
+     * negative-ID references in persistableChanges so the subsequent batch-save
+     * persists correct real IDs to the database.
+     *
+     * @param idMap - mapping of { virtualId: realId }
+     */
+    replaceVirtualIds(state, action: PayloadAction<Record<number, number>>) {
+      const idMap = action.payload;
+      if (Object.keys(idMap).length === 0) return;
+
+      for (const fileIdStr of Object.keys(state.files)) {
+        const fileId = Number(fileIdStr);
+        const file = state.files[fileId];
+
+        // Skip virtual files themselves and files with no pending changes
+        if (!file || fileId < 0) continue;
+        if (!file.persistableChanges || Object.keys(file.persistableChanges).length === 0) continue;
+
+        // Merge base content + pending changes, then rewrite any negative IDs
+        const merged = { ...file.content, ...file.persistableChanges } as any;
+        const updated = replaceNegativeIdsInContent(merged, file.type as FileType, idMap);
+
+        if (JSON.stringify(updated) !== JSON.stringify(merged)) {
+          state.files[fileId].persistableChanges = {
+            ...file.persistableChanges,
+            ...updated
+          };
+        }
+      }
     }
   }
 });
@@ -878,7 +919,8 @@ export const {
   addFile,
   addQuestionToDashboard,
   addReferenceToQuestion,
-  removeReferenceFromQuestion
+  removeReferenceFromQuestion,
+  replaceVirtualIds
 } = filesSlice.actions;
 
 // Selectors
@@ -1030,6 +1072,22 @@ export const selectHasMetadataChanges = (state: RootState, id: FileId): boolean 
  */
 export const selectFileLoadError = (state: RootState, id: FileId): LoadError | null => {
   return state.files.files[id]?.loadError ?? null;
+};
+
+/**
+ * Returns all loaded NON-system files that have unsaved changes.
+ * System files (connection, config, styles, context) are excluded:
+ * they save in-place and are discarded on navigation-away anyway.
+ */
+export const selectDirtyFiles = (state: RootState): FileState[] => {
+  return Object.values(state.files.files).filter(file =>
+    file &&
+    !SYSTEM_FILE_TYPES_SET.has(file.type) &&
+    (
+      (file.persistableChanges && Object.keys(file.persistableChanges).length > 0) ||
+      (file.metadataChanges && (file.metadataChanges.name !== undefined || file.metadataChanges.path !== undefined))
+    )
+  ) as FileState[];
 };
 
 // ============================================================================

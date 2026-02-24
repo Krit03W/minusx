@@ -10,8 +10,8 @@ import {
   HStack,
   VStack,
 } from '@chakra-ui/react';
-import { LuSave, LuPencil, LuTriangleAlert, LuEye, LuCode } from 'react-icons/lu';
-import { getFileTypeMetadata } from '@/lib/ui/file-metadata';
+import { LuSave, LuPencil, LuTriangleAlert, LuEye, LuCode, LuUpload } from 'react-icons/lu';
+import { getFileTypeMetadata, isSystemFileType, type FileType } from '@/lib/ui/file-metadata';
 import TabSwitcher from './TabSwitcher';
 import FileTypeBadge from './FileTypeBadge';
 import ExplainButton from '@/components/ExplainButton';
@@ -57,6 +57,16 @@ export interface DocumentHeaderProps {
 
   // Explain button (optional - shown for questions)
   questionId?: number;  // If provided, show explain button in view mode
+
+  // Publish workflow: when onPublish is provided and this is not a system file,
+  // the Save button is replaced with a Publish button that opens the PublishModal.
+  // System files (connection, config, styles, context) always use the inline Save button.
+  onPublish?: () => void;
+
+  // True when any file in the app has unsaved changes (not just this file).
+  // Keeps the Publish button visible even when not editing the current file,
+  // so it acts as a persistent reminder of unpublished work.
+  anyDirtyFiles?: boolean;
 }
 
 export default function DocumentHeader({
@@ -77,10 +87,17 @@ export default function DocumentHeader({
   viewMode = 'visual',
   onViewModeChange,
   questionId,
+  onPublish,
+  anyDirtyFiles = false,
 }: DocumentHeaderProps) {
   const metadata = getFileTypeMetadata(fileType);
   const [validationError, setValidationError] = useState<string | null>(null);
   const showJson = useAppSelector((state) => state.ui.showJson);
+
+  // System files (connection, config, styles, context) always use inline Save.
+  // All other files use Publish when onPublish is provided.
+  const isSystemFile = isSystemFileType(fileType as FileType);
+  const showPublishButton = !isSystemFile && !!onPublish;
 
   // Validate and save
   const handleSave = useCallback(() => {
@@ -221,8 +238,21 @@ export default function DocumentHeader({
               <ExplainButton questionId={questionId} size="xs" />
             )}
 
-            {/* Save Button (show in edit mode) */}
-            {editMode && (
+            {/* Save / Publish Button */}
+            {/* Publish: shown when editing this file, or when any file has unsaved changes */}
+            {(editMode || anyDirtyFiles) && showPublishButton ? (
+              <IconButton
+                onClick={onPublish}
+                aria-label="Publish changes"
+                size="xs"
+                colorPalette="teal"
+                disabled={!isDirty && !anyDirtyFiles}
+                px={2}
+              >
+                <LuUpload />
+                Publish
+              </IconButton>
+            ) : editMode && (
               <IconButton
                 onClick={handleSave}
                 aria-label="Save"
