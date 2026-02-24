@@ -1,59 +1,81 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { HStack } from '@chakra-ui/react';
+import { HStack, IconButton } from '@chakra-ui/react';
+import { LuPlay } from 'react-icons/lu';
+import { Tooltip } from '@/components/ui/tooltip';
 import { QuestionParameter } from '@/lib/types';
 import ParameterInput from './ParameterInput';
 
 interface ParameterRowProps {
   parameters: QuestionParameter[];
-  onSubmit: (parameters: QuestionParameter[]) => void;
-  onParametersChange?: (parameters: QuestionParameter[]) => void;
+  parameterValues?: Record<string, any>;        // ephemeral runtime values
+  lastSubmittedValues?: Record<string, any>;     // values last used for execution
+  onValueChange?: (paramName: string, value: string | number) => void;  // ephemeral
+  onSubmit: (paramValues: Record<string, any>) => void;  // submit for execution
+  onParametersChange?: (parameters: QuestionParameter[]) => void;  // structural
+  onSetDefault?: (paramName: string, value: string | number | undefined) => void;
   disableTypeChange?: boolean;
+  disableSetDefault?: boolean;
   onHoverParam?: (key: string | null) => void;
 }
 
 export default function ParameterRow({
   parameters,
+  parameterValues,
+  lastSubmittedValues,
+  onValueChange,
   onSubmit,
   onParametersChange,
+  onSetDefault,
   disableTypeChange = false,
+  disableSetDefault = false,
   onHoverParam,
 }: ParameterRowProps) {
-  const [localParameters, setLocalParameters] = useState<QuestionParameter[]>(parameters);
-
-  // Sync local parameters when props change
-  useEffect(() => {
-    setLocalParameters(parameters);
-  }, [parameters]);
+  // Compute effective value per param: ephemeral → defaultValue → undefined
+  const getEffectiveValue = (param: QuestionParameter): string | number | undefined => {
+    const ephemeral = parameterValues?.[param.name];
+    if (ephemeral !== undefined) return ephemeral;
+    if (param.defaultValue !== undefined && param.defaultValue !== null) return param.defaultValue;
+    return undefined;
+  };
 
   const handleValueChange = (paramName: string, value: string | number) => {
-    const updatedParams = localParameters.map((p) =>
-      p.name === paramName ? { ...p, value } : p
-    );
-    setLocalParameters(updatedParams);
+    if (onValueChange) {
+      onValueChange(paramName, value);
+    }
   };
 
-  // Handle submit with optional param update (for Enter key during typing)
+  // Handle submit: build effective values dict and call onSubmit
   const handleSubmit = (paramName?: string, value?: string | number) => {
-    let paramsToSubmit = localParameters;
+    const valuesDict: Record<string, any> = {};
 
-    // If called with param update, apply it immediately
-    if (paramName !== undefined && value !== undefined) {
-      paramsToSubmit = localParameters.map((p) =>
-        p.name === paramName ? { ...p, value } : p
-      );
-      setLocalParameters(paramsToSubmit);
+    for (const p of parameters) {
+      // If this is the param being submitted with a new value, use that value
+      if (paramName !== undefined && p.name === paramName && value !== undefined) {
+        valuesDict[p.name] = value;
+        // Also update ephemeral state
+        if (onValueChange) {
+          onValueChange(paramName, value);
+        }
+      } else {
+        valuesDict[p.name] = getEffectiveValue(p) ?? '';
+      }
     }
 
-    onSubmit(paramsToSubmit);
+    onSubmit(valuesDict);
   };
 
+  // Dirty detection: any param's effective value differs from lastSubmittedValues
+  const isDirty = lastSubmittedValues !== undefined && parameters.some(p => {
+    const effective = String(getEffectiveValue(p) ?? '');
+    const submitted = String(lastSubmittedValues[p.name] ?? '');
+    return effective !== submitted;
+  });
+
   const handleTypeChange = (paramName: string, type: 'text' | 'number' | 'date') => {
-    const updatedParams = localParameters.map((p) =>
+    const updatedParams = parameters.map((p) =>
       p.name === paramName ? { ...p, type } : p
     );
-    setLocalParameters(updatedParams);
     if (onParametersChange) {
       onParametersChange(updatedParams);
     }
@@ -61,18 +83,36 @@ export default function ParameterRow({
 
   return (
     <HStack gap={3} flexWrap="wrap" align="center" mt={4} mb={2}>
-      {localParameters.map((param) => (
+      {parameters.map((param) => (
         <ParameterInput
           key={param.name}
           parameter={param}
-          value={param.value ?? undefined}
+          value={getEffectiveValue(param)}
+          defaultValue={param.defaultValue}
           onChange={(value) => handleValueChange(param.name, value)}
           onTypeChange={(type) => handleTypeChange(param.name, type)}
           onSubmit={handleSubmit}
+          onSetDefault={onSetDefault ? (value) => onSetDefault(param.name, value) : undefined}
           disableTypeChange={disableTypeChange}
+          disableSetDefault={disableSetDefault}
           onHoverParam={onHoverParam}
         />
       ))}
+      {isDirty && (
+        <Tooltip content="Run with updated values (⌘+Enter)">
+          <IconButton
+            aria-label="Run query"
+            size="sm"
+            variant="solid"
+            colorPalette="teal"
+            px={2}
+            onClick={() => handleSubmit()}
+          >
+            <LuPlay />
+            Rerun
+          </IconButton>
+        </Tooltip>
+      )}
     </HStack>
   );
 }

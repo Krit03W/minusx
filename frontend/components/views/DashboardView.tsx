@@ -10,7 +10,7 @@ import 'react-grid-layout/css/styles.css';
 import { getFileTypeMetadata } from '@/lib/ui/file-metadata';
 import JsonEditor from '../slides/JsonEditor';
 import { useAppSelector, useAppDispatch } from '@/store/hooks';
-import { selectMergedContent } from '@/store/filesSlice';
+import { selectMergedContent, selectEphemeralParamValues, setEphemeral } from '@/store/filesSlice';
 import { openFileModal, selectDashboardEditMode, selectFileViewMode } from '@/store/uiSlice';
 import { useConfigs } from '@/lib/hooks/useConfigs';
 import { syncParametersWithSQL } from '@/lib/sql/sql-params';
@@ -80,11 +80,13 @@ export default function DashboardView({
   // Track current columns for responsive grid background
   const [currentCols, setCurrentCols] = useState(12);
 
-  // Read parameter values from Redux ephemeral state
-  const savedParamValues = useAppSelector(state => {
-    const mergedContent = selectMergedContent(state, fileId) as DocumentContent;
-    return mergedContent?.parameterValues || {};
-  });
+  // Read ephemeral parameter values from Redux
+  const ephemeralParamValues = useAppSelector(state => selectEphemeralParamValues(state, fileId));
+
+  // Last-submitted param values from lastExecuted (gates execution)
+  const lastExecutedParams = useAppSelector(
+    state => (state.files.files[fileId]?.ephemeralChanges as any)?.lastExecuted?.params as Record<string, any> | undefined
+  ) ?? {};
 
   // Get agent name from config
   const { config } = useConfigs();
@@ -178,13 +180,19 @@ export default function DashboardView({
   // Hover state for param filter chips
   const [hoveredParamKey, setHoveredParamKey] = useState<string | null>(null);
 
-  // Merge parameter structure (from questions) with saved values (from Redux)
+  // Parameters for display (structure from questions, values from ephemeral)
   const parameterValuesForDisplay = useMemo(() => {
-    return mergedParameters.map(param => ({
-      ...param,
-      value: savedParamValues[param.name] ?? param.value  // Saved value or question default
-    }));
-  }, [mergedParameters, savedParamValues]);
+    return mergedParameters;
+  }, [mergedParameters]);
+
+  // Effective submitted values: only these flow to query execution
+  const effectiveSubmittedValues = useMemo(() => {
+    const values: Record<string, any> = {};
+    for (const p of mergedParameters) {
+      values[p.name] = lastExecutedParams[p.name] ?? p.defaultValue ?? '';
+    }
+    return values;
+  }, [mergedParameters, lastExecutedParams]);
 
   // Handler for removing questions (needs to be defined before questionGridItems)
   const handleRemoveQuestion = useCallback((questionIdStr: string) => {
@@ -303,6 +311,7 @@ export default function DashboardView({
           <SmartEmbeddedQuestionContainer
             questionId={questionId}
             externalParameters={parameterValuesForDisplay}
+            externalParamValues={effectiveSubmittedValues}
             showTitle={true}
             editMode={editMode}
             index={index}
@@ -312,7 +321,7 @@ export default function DashboardView({
         </Box>
       );
     });
-  }, [questionIds, editMode, handleRemoveQuestion, parameterValuesForDisplay, hoveredParamKey, paramToQuestionIds]);
+  }, [questionIds, editMode, handleRemoveQuestion, parameterValuesForDisplay, effectiveSubmittedValues, hoveredParamKey, paramToQuestionIds]);
 
   const handleLayoutChange = (newLayout: Layout[]) => {
     if (!document) return;
@@ -353,17 +362,26 @@ export default function DashboardView({
             <Box mb={4}>
               <ParameterRow
                 parameters={parameterValuesForDisplay}
-                onSubmit={(updatedParams) => {
-                  // Convert array to dict: [{name, value}] → {name: value}
-                  const valuesDict = updatedParams.reduce((acc, p) => ({
-                    ...acc,
-                    [p.name]: p.value
-                  }), {} as Record<string, any>);
-
-                  // Update via onChange callback
-                  onChange({ parameterValues: valuesDict });
+                parameterValues={ephemeralParamValues}
+                lastSubmittedValues={effectiveSubmittedValues}
+                onValueChange={(paramName, value) => {
+                  dispatch(setEphemeral({
+                    fileId,
+                    changes: { parameterValues: { ...ephemeralParamValues, [paramName]: value } }
+                  }));
+                }}
+                onSubmit={(paramValues) => {
+                  // Update ephemeral typing state + lastExecuted.params to trigger execution
+                  dispatch(setEphemeral({
+                    fileId,
+                    changes: {
+                      parameterValues: paramValues,
+                      lastExecuted: { query: '', params: paramValues, database: '', references: [] }
+                    }
+                  }));
                 }}
                 disableTypeChange={true}
+                disableSetDefault={true}
                 onHoverParam={setHoveredParamKey}
               />
             </Box>
