@@ -19,8 +19,6 @@ import { extractReferencesFromContent } from '@/lib/data/helpers/extract-referen
 import { getRouter } from '@/lib/navigation/use-navigation';
 import { readFilesStr, editFileStr, publishFile, getQueryResult, createVirtualFile, editFile as editFileOp, clearFileChanges } from '@/lib/api/file-state';
 import { canCreateFileType } from '@/lib/auth/access-rules.client';
-import { openFileModal } from '@/store/uiSlice';
-import { selectPathState } from '@/store/navigationSlice';
 import { preserveParams } from '@/lib/navigation/url-utils';
 
 // ============================================================================
@@ -1752,37 +1750,19 @@ registerFrontendTool('ReadFiles', async (args, context) => {
  * EditFile - String-based editing for native toolset
  * Routes to editFileStr for string find-and-replace with oldMatch/newMatch parameters
  */
-registerFrontendTool('EditFile', async (args, context) => {
+registerFrontendTool('EditFile', async (args, _context) => {
   const { fileId, oldMatch, newMatch } = args;
 
   const state = getStore().getState();
   const fileState = state.files.files[fileId];
-  const pathState = selectPathState(state);
 
-  // Pre-compute navigation intent
-  const isCurrentFile = pathState.type === 'file' && pathState.id === fileId;
-  const shouldNavigate = !isCurrentFile && (
-    pathState.type === 'folder' ||
-    (pathState.type === 'file' && fileState?.type === 'dashboard')
-  );
-  const shouldOpenModal = !isCurrentFile &&
-    pathState.type === 'file' && fileState?.type === 'question';
-
-  // Navigate/open modal FIRST so the user sees the edit applied live
-  if (shouldNavigate) {
-    const router = getRouter();
-    router?.push(preserveParams(`/f/${fileId}`));
-  } else if (shouldOpenModal) {
-    context.dispatch!(openFileModal(fileId));
-  }
-
-  // THEN edit (user sees changes applied live in the UI)
+  // Edit (stages changes in Redux as draft)
   const result = await editFileStr({ fileId, oldMatch, newMatch });
   if (!result.success) {
     throw new Error(result.error || 'Edit failed');
   }
 
-  // Auto-execute query for questions (agent tool only)
+  // Auto-execute query for questions (agent sees results immediately)
   if (fileState?.type === 'question') {
     const updatedState = getStore().getState();
     const finalContent = selectMergedContent(updatedState, fileId) as any;
@@ -1801,28 +1781,19 @@ registerFrontendTool('EditFile', async (args, context) => {
     }
   }
 
-  // Save after edit
-  if (shouldNavigate || shouldOpenModal) {
-    await publishFile({ fileId });
-  }
-
   return result;
 });
 
 /**
- * CreateFile - Create a new file with context-aware behavior:
- * - Creating a question while viewing a file → creates, saves, opens in modal
- * - Creating a dashboard, or from a folder context → navigate to new file page
+ * CreateFile - Create a new file:
+ * - Creating a question → always creates as draft (virtual ID), no navigation or modal
+ * - Creating a dashboard → navigate to new file creation page
  */
-registerFrontendTool('CreateFile', async (args, context) => {
+registerFrontendTool('CreateFile', async (args, _context) => {
   const { file_type, name, query, database_name, viz_settings, folder } = args;
-  const { dispatch } = context;
-  const currentState = getStore().getState();
-  const pathState = selectPathState(currentState);
-  const isInFileContext = pathState.type === 'file';
 
-  if (file_type === 'question' && isInFileContext) {
-    // Create virtual file, edit it, save, and open in modal
+  if (file_type === 'question') {
+    // Create virtual file (draft) — always, regardless of current page context
     const virtualId = await createVirtualFile('question', { folder, query, databaseName: database_name });
 
     if (name) {
@@ -1832,18 +1803,14 @@ registerFrontendTool('CreateFile', async (args, context) => {
       await editFileOp({ fileId: virtualId, changes: { content: { vizSettings: viz_settings } } });
     }
 
-    const saveResult = await publishFile({ fileId: virtualId });
-    const realId = saveResult.id ?? virtualId;
-
-    dispatch!(openFileModal(realId));
     return {
       success: true,
-      questionId: realId,
-      message: `Created question "${name}" (id: ${realId}) and opened in modal. To add it to a dashboard, call EditDashboard with operation="add_existing_question", question_id=${realId}.`
+      virtualId,
+      message: `Created draft question "${name}" (virtualId: ${virtualId}). Add to a dashboard: EditDashboard(operation="add_existing_question", question_id=${virtualId}, file_id=<dashboardId>). Changes are staged as drafts until the user publishes.`
     };
   }
 
-  // Dashboard or folder context → navigate to new file creation page
+  // Dashboard → navigate to new file creation page
   const router = getRouter();
   if (!router) {
     return { success: false, message: 'Router not available' };

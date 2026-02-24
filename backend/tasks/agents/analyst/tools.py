@@ -719,11 +719,8 @@ class EditFile(Tool):
     bypasses that — orphaned or missing parameters will cause query execution to fail.
 
     The tool validates changes and returns a diff.
-    Changes are stored in Redux but NOT saved to database until PublishFile is called.
-
-    Note: When editing a question while currently viewing a different file, the question will be
-    automatically saved and shown in a modal overlay on the current page.
-    No need to call Navigate or PublishFile afterward — it is handled automatically.
+    Changes are staged as drafts in Redux. The user reviews and publishes all pending changes
+    via the Publish All button. You do not need to call Navigate or PublishFile.
     """
 
     def __init__(
@@ -774,12 +771,12 @@ class PublishFile(Tool):
 class CreateFile(Tool):
     """Create a new file (question or dashboard).
 
-    Behavior depends on context:
-    - Creating a *question* while viewing any file → question is created, saved,
-      and shown in a modal overlay on the current page. No page navigation occurs.
-      Do NOT call Navigate after this.
-      Returns questionId in the result — use it to add the question to a dashboard:
-        EditDashboard(operation="add_existing_question", question_id=<questionId>, file_id=<dashboardId>)
+    Behavior depends on file_type:
+    - Creating a *question* → question is created as a draft (virtual ID, negative number).
+      No page navigation, no modal. Returns virtualId.
+      Use virtualId directly with EditDashboard to add it to a dashboard:
+        EditDashboard(operation="add_existing_question", question_id=<virtualId>, file_id=<dashboardId>)
+      Changes are staged until the user publishes.
     - Creating a *dashboard*, or any file from a folder → navigates to the new file page.
     """
 

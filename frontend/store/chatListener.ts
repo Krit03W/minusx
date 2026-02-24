@@ -623,30 +623,17 @@ chatListenerMiddleware.startListening({
 
     if (!realConversation) return;
 
-    // Execute all pending tools automatically
-    for (const pendingTool of realConversation.pending_tool_calls) {
-      // Skip if already completed
-      if (pendingTool.result) continue;
-
-      // Skip if waiting for user input
-      const hasIncompleteUserInputs = pendingTool.userInputs?.some(
-        ui => ui.result === undefined
-      );
-      if (hasIncompleteUserInputs) {
-        console.log(`[chatListener] Tool ${pendingTool.toolCall.id} waiting for user input`);
-        continue;
-      }
-
+    // Helper: run one pending tool call
+    const runOne = async (pendingTool: (typeof realConversation.pending_tool_calls)[number]) => {
       try {
         console.log(`[chatListener] Executing tool: ${pendingTool.toolCall.function.name}`);
 
         // Dynamic import to avoid circular dependencies
         const { executeToolCall } = await import('@/lib/api/tool-handlers');
 
-        // Get database and pageDetails from agent_args
-        const { connection_id, file_id, page_type } = conversation.agent_args;
+        // Get database from agent_args
         const database = {
-          databaseName: connection_id,
+          databaseName: conversation.agent_args.connection_id,
           schemas: conversation.agent_args.schema || []
         };
 
@@ -707,7 +694,30 @@ chatListenerMiddleware.startListening({
           }));
         }
       }
+    };
+
+    // Only eligible tools: not yet complete, not waiting for user input
+    const eligible = realConversation.pending_tool_calls.filter(t =>
+      !t.result && !t.userInputs?.some(ui => ui.result === undefined)
+    );
+
+    // Group by fileId: same fileId → serial; different fileId → parallel
+    const groups = new Map<string, typeof eligible>();
+    for (const tool of eligible) {
+      const toolArgs = tool.toolCall.function.arguments || {};
+      const key = toolArgs.fileId != null ? String(toolArgs.fileId) : `_${tool.toolCall.id}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(tool);
     }
+
+    // Run groups in parallel; within each group, sequential
+    await Promise.all(
+      Array.from(groups.values()).map(async (group) => {
+        for (const tool of group) {
+          await runOne(tool);
+        }
+      })
+    );
   }
 });
 

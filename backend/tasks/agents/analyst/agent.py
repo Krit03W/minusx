@@ -133,7 +133,7 @@ class AnalystAgent(Agent):
             return []
 
         if self.toolset == 'native':
-            return [ReadFiles, EditFile, PublishFile, ExecuteQuery, Navigate, Clarify, SearchDBSchema, SearchFiles, CreateFile]
+            return [ReadFiles, EditFile, ExecuteQuery, Navigate, Clarify, SearchDBSchema, SearchFiles, CreateFile]
 
         # classic (default)
         return [ExecuteSQLQuery, SearchDBSchema, SearchFiles, GetFiles, UpdateFileMetadata, Navigate, Clarify, EditDashboard, EditReport, GetAllQuestions, CreateFile]
