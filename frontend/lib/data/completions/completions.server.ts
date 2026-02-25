@@ -147,6 +147,78 @@ class CompletionsDataLayerServer implements ICompletionsDataLayer {
       }
     }
 
+    // Infer columns for each resolved reference and inject as virtual schema tables
+    const schemaData = [...(context.schemaData || [])];
+    for (const ref of resolvedReferences) {
+      if (!ref.inferredColumns && ref.query) {
+        try {
+          const inferResponse = await pythonBackendFetch('/api/infer-columns', {
+            method: 'POST',
+            body: JSON.stringify({
+              query: ref.query,
+              schema_data: context.schemaData || [],
+            }),
+          });
+          if (inferResponse.ok) {
+            const inferData = await inferResponse.json();
+            ref.inferredColumns = inferData.columns || [];
+          }
+        } catch (err) {
+          console.warn(`[Completions] Failed to infer columns for ref ${ref.alias}:`, err);
+        }
+      }
+
+      if (ref.inferredColumns && ref.inferredColumns.length > 0) {
+        // Find or create the entry for the current databaseName
+        const dbName = context.databaseName || '';
+        let dbEntry = schemaData.find(d => d.databaseName === dbName);
+        if (!dbEntry) {
+          dbEntry = { databaseName: dbName, schemas: [] };
+          schemaData.push(dbEntry);
+        }
+
+        // Find or create a schema bucket for virtual tables (use empty schema name)
+        let virtualSchema = dbEntry.schemas.find((s: any) => s.schema === '');
+        if (!virtualSchema) {
+          virtualSchema = { schema: '', tables: [] };
+          dbEntry.schemas.push(virtualSchema);
+        }
+
+        // Add virtual table for this reference (alias → columns)
+        const existingIdx = virtualSchema.tables.findIndex((t: any) => t.table === ref.alias);
+        const virtualTable = {
+          table: ref.alias,
+          columns: ref.inferredColumns.map(c => ({ name: c.name, type: c.type })),
+        };
+        if (existingIdx >= 0) {
+          virtualSchema.tables[existingIdx] = virtualTable;
+        } else {
+          virtualSchema.tables.push(virtualTable);
+        }
+
+        // Also inject virtual tables for any SQL aliases used for this reference
+        // in the original query (e.g. "FROM @revenue_1 r" → inject table "r" too).
+        // This allows Python's dot-completion fallback to find columns when parse fails.
+        const SQL_KEYWORDS = new Set(['on', 'where', 'join', 'inner', 'left', 'right', 'outer',
+          'full', 'cross', 'group', 'order', 'having', 'limit', 'union', 'except', 'intersect',
+          'as', 'and', 'or', 'not', 'in', 'is', 'null', 'between', 'like', 'select', 'from', 'with']);
+        const aliasPattern = new RegExp(`@${ref.alias}\\s+(\\w+)`, 'gi');
+        let aliasMatch: RegExpExecArray | null;
+        while ((aliasMatch = aliasPattern.exec(query)) !== null) {
+          const sqlAlias = aliasMatch[1];
+          if (!SQL_KEYWORDS.has(sqlAlias.toLowerCase()) && sqlAlias.toLowerCase() !== ref.alias.toLowerCase()) {
+            const existingAliasIdx = virtualSchema.tables.findIndex((t: any) => t.table === sqlAlias);
+            if (existingAliasIdx < 0) {
+              virtualSchema.tables.push({
+                table: sqlAlias,
+                columns: ref.inferredColumns!.map(c => ({ name: c.name, type: c.type })),
+              });
+            }
+          }
+        }
+      }
+    }
+
     // Convert @references to CTEs if needed and adjust cursor offset
     let processedQuery = query;
     let adjustedCursorOffset = cursorOffset;
@@ -182,7 +254,7 @@ class CompletionsDataLayerServer implements ICompletionsDataLayer {
         body: JSON.stringify({
           query: processedQuery,
           cursor_offset: adjustedCursorOffset,
-          schema_data: context.schemaData || [],
+          schema_data: schemaData,
           database_name: context.databaseName,
         }),
       });
