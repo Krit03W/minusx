@@ -11,11 +11,13 @@ import { createEmptyDatabase } from '../../scripts/create-empty-db';
 import { Company } from './company-db';
 import { User } from './user-db';
 import { DbFile } from '../types';
-import { getDataVersion } from './config-db';
-import { createAdapter } from './adapter/factory';
+import { getDataVersion, setDataVersion, setSchemaVersion } from './config-db';
+import { createAdapter, resetAdapter } from './adapter/factory';
 import { hashPassword } from '../auth/password-utils';
 import { DEFAULT_STYLES } from '../branding/whitelabel';
 import companyTemplate from './company-template.json';
+import { validateInitData } from './validation';
+import { LATEST_SCHEMA_VERSION } from './constants';
 
 /**
  * Company data with nested users and documents
@@ -257,8 +259,6 @@ export async function importToDatabase(dbPath: string, initData: InitData, compa
       }
 
       // Set data version and schema version in configs table
-      const { setDataVersion, setSchemaVersion } = require('./config-db');
-      const { LATEST_SCHEMA_VERSION } = require('./constants');
       await setDataVersion(initData.version, tx);
       await setSchemaVersion(LATEST_SCHEMA_VERSION, tx);
     });
@@ -295,7 +295,6 @@ export async function atomicImport(
     // Validate after import
     console.log('✅ Surgical import complete, validating...');
     const exportedData = await exportDatabase(targetDbPath);
-    const { validateInitData } = await import('./validation');
     const validation = validateInitData(exportedData);
 
     if (!validation.valid) {
@@ -342,7 +341,6 @@ async function atomicImportSqlite(initData: InitData, targetDbPath: string): Pro
 
     // Note: Caller should validate before calling atomicImport,
     // but we do a final check here as a safety measure
-    const { validateInitData } = await import('./validation');
     const validation = validateInitData(exportedData);
 
     if (!validation.valid) {
@@ -420,7 +418,6 @@ async function atomicImportSqlite(initData: InitData, targetDbPath: string): Pro
       // Old connection now points to .backup file (harmless)
       // Next request will create new connection to new DB
       console.log('🔄 Closing singleton adapter...');
-      const { resetAdapter } = await import('./adapter/factory');
       await resetAdapter();
       console.log('✅ Singleton adapter closed - new connections will use new database');
 
@@ -478,17 +475,19 @@ async function atomicImportPostgres(initData: InitData, _targetDbPath: string): 
   await db.close();
   console.log('✅ Schema ready');
 
+  // Close singleton adapter BEFORE importing to prevent lock contention.
+  // The singleton pool serves regular app requests; its connections can block
+  // the DELETE FROM companies/users/files statements in the import transaction.
+  console.log('🔄 Closing singleton adapter before import...');
+  const { resetAdapter } = await import('./adapter/factory');
+  await resetAdapter();
+  console.log('✅ Singleton adapter closed');
+
   // Import directly to target (transaction provides atomicity)
   // If this fails, transaction rolls back automatically
   await importToDatabase(_targetDbPath, initData);
 
   console.log('✅ PostgreSQL import complete (transaction committed)');
-
-  // Close singleton adapter to refresh connection
-  console.log('🔄 Closing singleton adapter...');
-  const { resetAdapter } = await import('./adapter/factory');
-  await resetAdapter();
-  console.log('✅ Singleton adapter closed - new connections will use refreshed database');
 }
 
 /**

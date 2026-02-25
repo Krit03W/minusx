@@ -30,6 +30,8 @@ export class PostgresAdapter implements IDatabaseAdapter {
         connectionString: this.connectionString,
         // Set search_path to look in specified schema first, then public
         options: `-c search_path=${schema},public`,
+        // Fail fast if pool can't acquire a connection within 30s (prevents infinite hangs)
+        connectionTimeoutMillis: 30000,
       });
 
       // Handle pool errors

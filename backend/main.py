@@ -349,6 +349,14 @@ async def connections_health():
     }
 
 
+@app.post("/api/connections/reinitialize")
+async def reinitialize_connections():
+    """Clear all cached connections so they are re-fetched from the DB on next use.
+    Called after a database migration to pick up updated connection configs."""
+    await connection_manager.close_all()
+    return {"success": True}
+
+
 @app.post("/api/connections/test", response_model=TestConnectionResponse)
 async def test_connection(req: TestConnectionRequest):
     """

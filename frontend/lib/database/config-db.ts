@@ -3,9 +3,11 @@
  */
 
 import { getAdapter } from './adapter/factory';
-import { IDatabaseAdapter } from './adapter/types';
+import { IDatabaseAdapter, ITransactionContext } from './adapter/types';
 
-export async function getConfigValue(key: string, db?: IDatabaseAdapter): Promise<string | null> {
+type QueryContext = IDatabaseAdapter | ITransactionContext;
+
+export async function getConfigValue(key: string, db?: QueryContext): Promise<string | null> {
   const adapter = db || await getAdapter();
   try {
     const result = await adapter.query<{ value: string }>('SELECT value FROM configs WHERE key = $1', [key]);
@@ -19,7 +21,7 @@ export async function getConfigValue(key: string, db?: IDatabaseAdapter): Promis
   }
 }
 
-export async function setConfigValue(key: string, value: string, db?: IDatabaseAdapter): Promise<void> {
+export async function setConfigValue(key: string, value: string, db?: QueryContext): Promise<void> {
   const adapter = db || await getAdapter();
   await adapter.query(`
     INSERT INTO configs (key, value, updated_at)
@@ -28,20 +30,20 @@ export async function setConfigValue(key: string, value: string, db?: IDatabaseA
   `, [key, value, value]);
 }
 
-export async function getDataVersion(db?: IDatabaseAdapter): Promise<number> {
+export async function getDataVersion(db?: QueryContext): Promise<number> {
   const version = await getConfigValue('data_version', db);
   return version ? parseInt(version, 10) : 0;
 }
 
-export async function setDataVersion(version: number, db?: IDatabaseAdapter): Promise<void> {
+export async function setDataVersion(version: number, db?: QueryContext): Promise<void> {
   await setConfigValue('data_version', version.toString(), db);
 }
 
-export async function getSchemaVersion(db?: IDatabaseAdapter): Promise<number> {
+export async function getSchemaVersion(db?: QueryContext): Promise<number> {
   const version = await getConfigValue('schema_version', db);
   return version ? parseInt(version, 10) : 0;
 }
 
-export async function setSchemaVersion(version: number, db?: IDatabaseAdapter): Promise<void> {
+export async function setSchemaVersion(version: number, db?: QueryContext): Promise<void> {
   await setConfigValue('schema_version', version.toString(), db);
 }

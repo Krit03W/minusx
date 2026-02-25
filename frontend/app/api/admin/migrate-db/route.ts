@@ -18,6 +18,7 @@ import { applyMigrations, getTargetVersions, needsSchemaMigration, MIGRATIONS } 
 import { LATEST_SCHEMA_VERSION } from '@/lib/database/constants';
 import { DB_PATH, getDbType } from '@/lib/database/db-config';
 import { createAdapter } from '@/lib/database/adapter/factory';
+import { BACKEND_URL } from '@/lib/constants';
 import fs from 'fs';
 
 export const POST = withAuth(async (request: NextRequest, user) => {
@@ -83,8 +84,8 @@ export const POST = withAuth(async (request: NextRequest, user) => {
       });
     }
 
-    // Export current data
-    const exportedData = await exportDatabase(DB_PATH);
+    // Export current company's data only (API must never touch other companies)
+    const exportedData = await exportDatabase(DB_PATH, user.companyId);
 
     // Apply data migrations
     const migratedData = applyMigrations(exportedData, currentDataVersion);
@@ -122,8 +123,8 @@ export const POST = withAuth(async (request: NextRequest, user) => {
       }, { status: 400 });
     }
 
-    // Re-import with atomic swap (recreates DB if schema changed)
-    await atomicImport(migratedData, DB_PATH);
+    // Re-import scoped to this company only (surgical — other companies untouched)
+    await atomicImport(migratedData, DB_PATH, [user.companyId]);
 
     // Update version markers
     const newDb = dbType === 'sqlite'
@@ -133,18 +134,14 @@ export const POST = withAuth(async (request: NextRequest, user) => {
     await setSchemaVersion(LATEST_SCHEMA_VERSION, newDb);
     await newDb.close();
 
-    // Reinitialize connections on Python backend
+    // Tell Python backend to drop its cached connections so it re-fetches updated configs
     try {
-      const authUrl = process.env.AUTH_URL || 'http://localhost:3000';
-      const response = await fetch(`${authUrl}/api/connections/reinitialize`, {
-        method: 'POST'
-      });
-
+      const response = await fetch(`${BACKEND_URL}/api/connections/reinitialize`, { method: 'POST' });
       if (!response.ok) {
-        console.warn('Warning: Failed to reinitialize connections');
+        console.warn('Warning: Failed to reinitialize Python backend connections');
       }
     } catch (error: any) {
-      console.warn(`Warning: Could not reach backend to reinitialize connections: ${error.message}`);
+      console.warn(`Warning: Could not reach Python backend to reinitialize connections: ${error.message}`);
     }
 
     // Determine success message
