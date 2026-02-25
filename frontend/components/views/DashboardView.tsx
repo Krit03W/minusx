@@ -13,6 +13,8 @@ import { useAppSelector, useAppDispatch } from '@/store/hooks';
 import { selectMergedContent, selectEphemeralParamValues, setEphemeral } from '@/store/filesSlice';
 import { openFileModal, selectDashboardEditMode, selectFileViewMode } from '@/store/uiSlice';
 import { useConfigs } from '@/lib/hooks/useConfigs';
+
+const EMPTY_PARAMS: Record<string, any> = {};
 import { syncParametersWithSQL } from '@/lib/sql/sql-params';
 import { shallowEqual } from 'react-redux';
 
@@ -88,9 +90,11 @@ export default function DashboardView({
   const ephemeralParamValues = useAppSelector(state => selectEphemeralParamValues(state, fileId));
 
   // Last-submitted param values from lastExecuted (gates execution)
+  // NOTE: ?? EMPTY_PARAMS (not ?? {}) — a new {} each render makes effectiveSubmittedValues unstable
+  // which cascades to queryParams in EmbeddedQuestionContainer and triggers infinite retry on errors.
   const lastExecutedParams = useAppSelector(
     state => (state.files.files[fileId]?.ephemeralChanges as any)?.lastExecuted?.params as Record<string, any> | undefined
-  ) ?? {};
+  ) ?? EMPTY_PARAMS;
 
   // Get agent name from config
   const { config } = useConfigs();

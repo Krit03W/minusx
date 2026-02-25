@@ -1421,8 +1421,10 @@ export async function getQueryResult(
   const isFresh = selectIsQueryFresh(state, query, queryParams, database, ttl);
   const cached = selectQueryResult(state, query, queryParams, database);
 
-  if (cached?.data && isFresh && !forceLoad) {
-    return Promise.resolve(cached.data);
+  if (isFresh && !forceLoad) {
+    if (cached?.data) return Promise.resolve(cached.data);
+    // Cached error within TTL — re-throw without re-fetching to prevent retry loop
+    if (cached?.error) throw new Error(cached.error);
   }
 
   // Step 2: Execute with deduplication via PromiseManager

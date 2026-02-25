@@ -178,7 +178,10 @@ export const selectIsQueryFresh = (
   ttl: number = 120000  // 120 seconds in ms
 ): boolean => {
   const result = selectQueryResult(state, query, params, database);
-  if (!result || !result.data) return false;
+  // Treat both successful results AND errors as fresh within the TTL window.
+  // Without this, a cached error is never "fresh", causing getQueryResult to
+  // re-execute a failing query on every render (infinite retry loop).
+  if (!result || (!result.data && !result.error)) return false;
 
   const age = Date.now() - result.updatedAt;
   return age < ttl;
