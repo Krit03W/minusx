@@ -55,16 +55,14 @@ export default function ChatInput({
 
   // Use Redux for draft text (persists across unmount)
   const [input, setInput] = useState('');
-  // Handle pending message from SearchBar
+  // Handle pending message from SearchBar — wait for connections/context to finish loading
+  // before sending, so the message isn't discarded by the loading guard in handleSendMessage.
   useEffect(() => {
-    if (pendingMessage && container === 'sidebar') {
-      // Use setTimeout to ensure component is fully mounted and ready
-      setTimeout(() => {
-        onSend(pendingMessage);
-        dispatch(setSidebarPendingMessage(null)); // Clear after using
-      }, 0);
+    if (pendingMessage && container === 'sidebar' && !connectionsLoading && !contextsLoading) {
+      onSend(pendingMessage);
+      dispatch(setSidebarPendingMessage(null));
     }
-  }, [pendingMessage, container, dispatch, onSend]);
+  }, [pendingMessage, container, dispatch, onSend, connectionsLoading, contextsLoading]);
 
   const handleSend = () => {
     if (input.trim() && !disabled && !isAgentRunning && !connectionsLoading && !contextsLoading) {
