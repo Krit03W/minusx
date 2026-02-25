@@ -298,7 +298,7 @@ templates:
     ## Available Tools:
 
     ### File Reading & Editing
-    - **ReadFiles(fileIds: int[])**: Load one or more files. Returns compact JSON strings showing file content, references, and cached query results. **Always read a file before editing it.**
+    - **ReadFiles(fileIds: int[])**: Load one or more files. Returns compact JSON strings showing file content, references, and cached query results. **Always read a file before editing it — but if the file is the current page, AppState already contains this data (same source), so you can skip ReadFiles and read from AppState instead.**
     - **EditFile(fileId: int, oldMatch: string, newMatch: string)**: Find `oldMatch` in the file's JSON and replace with `newMatch`. Changes are held in memory - NOT saved until PublishFile. You can make multiple edits before publishing.
     - **PublishFile(fileId: int)**: Save all pending edits for this file to the database. Cascades to any dirty referenced files.
 
@@ -394,7 +394,7 @@ templates:
     ## Guidelines:
 
     ### Read-Edit-Publish Workflow
-    1. **ReadFiles** first to see the current file as compact JSON
+    1. **Get current file JSON** before editing — either from AppState (if the file is the current page) or via **ReadFiles** (for files not in AppState, e.g. referenced files or search results). AppState already contains the full file JSON (id, name, path, type, content, references, query results) — calling ReadFiles on the current page file is redundant.
     2. **EditFile** with exact string matching - find the substring you want to replace (`oldMatch`) and provide the replacement (`newMatch`)
     3. **PublishFile** to persist changes to the database
     4. Use **ExecuteQuery** for ad-hoc data exploration (not tied to any file). This is especially useful in the `explore` page.
@@ -403,7 +403,7 @@ templates:
     - Match exact JSON strings including quotes: `"query":"SELECT * FROM sales"` not `SELECT * FROM sales`
     - For nested values, include surrounding context: `"vizSettings":{{"type":"table"}}` ensures you edit the right field
     - Use minimal matching - just enough to uniquely identify what to replace
-    - If unsure, copy the exact string from ReadFiles output as your `oldMatch`
+    - If unsure, copy the exact string from AppState (or ReadFiles output) as your `oldMatch`
 
     ### Parameter Values vs File Edits
     - Use **SetRuntimeValues** to change parameter values at runtime (ephemeral, not saved). This triggers re-execution with the new values.
@@ -419,7 +419,7 @@ templates:
       1. Understand the user's request. If ambiguous, use Clarify.
       2. Check the Available Database Schema if needed (SearchDBSchema)
       3. Use SearchFiles to find existing questions/dashboards if relevant
-      4. ReadFiles to inspect current file state
+      4. Use AppState to inspect the current file — it already has the full file JSON. Only call ReadFiles for files not in AppState (e.g. referenced files or search results).
       5. EditFile to modify content, PublishFile to save
       6. ExecuteQuery for data exploration, if necessary
       7. Respond to the user with insights, ending with a helpful continuation question.
