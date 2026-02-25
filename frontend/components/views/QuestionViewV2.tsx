@@ -21,7 +21,6 @@ import {
 } from '@chakra-ui/react';
 import {
   LuChevronDown,
-  LuChevronUp,
   LuChevronLeft,
   LuChevronRight,
   LuSparkles,
@@ -74,6 +73,9 @@ interface QuestionViewV2Props {
   // Container mode: 'preview' forces read-only with SQL diff
   mode?: 'view' | 'create' | 'preview';
 
+  // Hide viz type buttons and viz settings toggle (chart still renders)
+  showVizControls?: boolean;
+
   // Handlers
   onChange: (updates: Partial<QuestionContent>) => void;
   onParameterValueChange?: (paramName: string, value: string | number) => void;  // Ephemeral
@@ -94,6 +96,7 @@ export default function QuestionViewV2({
   proposedQuery,
   originalQuery,
   mode = 'view',
+  showVizControls = true,
   onChange,
   onParameterValueChange,
   onExecute,
@@ -108,9 +111,12 @@ export default function QuestionViewV2({
 
   // SQL editor collapsed state — persisted in Redux per question so it survives navigation.
   // Default: open in page mode, collapsed in toolcall/embedded mode.
-  const sqlEditorCollapsed = useAppSelector(
+  // When questionId is undefined (e.g. toolcall mode), use local state as fallback.
+  const [localSqlEditorCollapsed, setLocalSqlEditorCollapsed] = useState(!fullMode);
+  const reduxSqlEditorCollapsed = useAppSelector(
     state => selectSqlEditorCollapsed(state, questionId, !fullMode)
   );
+  const sqlEditorCollapsed = questionId !== undefined ? reduxSqlEditorCollapsed : localSqlEditorCollapsed;
   // editMode and viewMode sourced from Redux (managed by FileHeader)
   const reduxEditMode = useAppSelector(state => selectFileEditMode(state, questionId ?? -1));
   const editMode = isPreview ? false : reduxEditMode;
@@ -133,6 +139,8 @@ export default function QuestionViewV2({
   const handleSqlEditorToggle = useCallback(() => {
     if (questionId !== undefined) {
       dispatch(setSqlEditorCollapsed({ fileId: questionId, collapsed: !sqlEditorCollapsed }));
+    } else {
+      setLocalSqlEditorCollapsed(prev => !prev);
     }
   }, [dispatch, questionId, sqlEditorCollapsed]);
 
@@ -533,7 +541,7 @@ export default function QuestionViewV2({
                   onClick={handleSqlEditorToggle}
                 >
                   <Box color="fg.muted" fontSize="sm">
-                    {sqlEditorCollapsed ? <LuChevronDown /> : <LuChevronUp />}
+                    {sqlEditorCollapsed ? <LuChevronRight /> : <LuChevronDown />}
                   </Box>
                   <Text fontSize="sm" fontWeight="700">
                     Query
@@ -860,8 +868,8 @@ export default function QuestionViewV2({
                   showJsonToggle: false,
                   editable: editMode,
                   viz: {
-                    showTypeButtons: true,
-                    showChartBuilder: true,
+                    showTypeButtons: showVizControls,
+                    showChartBuilder: showVizControls,
                     // Always use horizontal (compact) to hide column sidebar - cleaner in side-by-side
                     typesButtonsOrientation: 'horizontal'
                   },
