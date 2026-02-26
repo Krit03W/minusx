@@ -12,6 +12,8 @@ import { PivotTable } from './PivotTable'
 import { PivotAxisBuilder } from './PivotAxisBuilder'
 import { SingleValue } from './SingleValue'
 import { TrendPlot } from './TrendPlot'
+import { WaterfallPlot } from './WaterfallPlot'
+import { ChartError } from './ChartError'
 import { DrillDownCard, type DrillDownState } from './DrillDownCard'
 import { AxisBuilder, type AxisZone } from './AxisBuilder'
 import { resolveColumnType } from './AxisComponents'
@@ -23,7 +25,7 @@ interface ChartBuilderProps {
   columns: string[]
   types: string[]
   rows: Record<string, any>[]
-  chartType: 'line' | 'bar' | 'area' | 'scatter' | 'funnel' | 'pie' | 'pivot' | 'trend'
+  chartType: 'line' | 'bar' | 'area' | 'scatter' | 'funnel' | 'pie' | 'pivot' | 'trend' | 'waterfall'
   initialXCols?: string[]
   initialYCols?: string[]
   onAxisChange?: (xCols: string[], yCols: string[]) => void
@@ -37,6 +39,7 @@ interface ChartBuilderProps {
   initialColumnFormats?: Record<string, ColumnFormatConfig>
   onColumnFormatsChange?: (formats: Record<string, ColumnFormatConfig>) => void
   settingsExpanded?: boolean
+  showChartTitle?: boolean
 }
 
 interface GroupedColumns {
@@ -45,7 +48,7 @@ interface GroupedColumns {
   categories: string[]
 }
 
-export const ChartBuilder = ({ columns, types, rows, chartType, initialXCols, initialYCols, onAxisChange, showAxisBuilder = true, useCompactView: useCompactViewProp = false, fillHeight = false, initialPivotConfig, onPivotConfigChange, sql, databaseName, initialColumnFormats, onColumnFormatsChange, settingsExpanded: settingsExpandedProp }: ChartBuilderProps) => {
+export const ChartBuilder = ({ columns, types, rows, chartType, initialXCols, initialYCols, onAxisChange, showAxisBuilder = true, useCompactView: useCompactViewProp = false, fillHeight = false, initialPivotConfig, onPivotConfigChange, sql, databaseName, initialColumnFormats, onColumnFormatsChange, settingsExpanded: settingsExpandedProp, showChartTitle = true }: ChartBuilderProps) => {
   // Group columns by type
   const groupedColumns: GroupedColumns = useMemo(() => {
     const groups: GroupedColumns = {
@@ -130,6 +133,16 @@ export const ChartBuilder = ({ columns, types, rows, chartType, initialXCols, in
 
   // Helper: resolve display name using alias
   const getDisplayName = useCallback((col: string) => columnFormats[col]?.alias || col, [columnFormats])
+
+  // Build chart title from axis columns using aliases
+  const chartTitle = useMemo(() => {
+    if (yAxisColumns.length === 0 && xAxisColumns.length === 0) return undefined
+    const yPart = yAxisColumns.map(getDisplayName).join(', ')
+    const xPart = xAxisColumns.length > 0 ? getDisplayName(xAxisColumns[0]) : ''
+    const splitPart = xAxisColumns.length > 1 ? xAxisColumns.slice(1).map(getDisplayName).join(', ') : ''
+    const parts = [yPart, xPart && `vs ${xPart}`, splitPart && `split by ${splitPart}`].filter(Boolean).join(' ')
+    return parts || undefined
+  }, [xAxisColumns, yAxisColumns, getDisplayName])
 
   // Build a y-axis label that fits on ~1 line (~40 chars),
   // showing as many column names as fit and "(and X other metrics)" for the rest
@@ -404,21 +417,11 @@ export const ChartBuilder = ({ columns, types, rows, chartType, initialXCols, in
               valueColumns={pivotConfig?.values.map(v => v.column)}
             />
           ) : (
-            <Box
-              display="flex"
-              alignItems="center"
-              justifyContent="center"
-              width="100%"
-              color="fg.muted"
-              fontSize="sm"
-            >
-              <VStack gap={2}>
-                <Text fontWeight="600">No data to display</Text>
-                <Text fontSize="xs" color="fg.subtle">
-                  Drag columns to Rows, Columns, and Values to build your pivot table
-                </Text>
-              </VStack>
-            </Box>
+            <ChartError
+              variant="info"
+              title="No data to display"
+              message="Drag columns to Rows, Columns, and Values to build your pivot table"
+            />
           )}
         </Box>
 
@@ -480,6 +483,8 @@ export const ChartBuilder = ({ columns, types, rows, chartType, initialXCols, in
                       yAxisColumns={yAxisColumns}
                       height={useCompactView && !fillHeight ? 300 : undefined}
                       onChartClick={handleChartClick}
+                      chartTitle={chartTitle}
+                      showChartTitle={showChartTitle}
                     />
                   )}
                   {chartType === 'bar' && (
@@ -493,6 +498,8 @@ export const ChartBuilder = ({ columns, types, rows, chartType, initialXCols, in
                       yAxisColumns={yAxisColumns}
                       height={useCompactView && !fillHeight ? 300 : undefined}
                       onChartClick={handleChartClick}
+                      chartTitle={chartTitle}
+                      showChartTitle={showChartTitle}
                     />
                   )}
                   {chartType === 'area' && (
@@ -506,6 +513,8 @@ export const ChartBuilder = ({ columns, types, rows, chartType, initialXCols, in
                       yAxisColumns={yAxisColumns}
                       height={useCompactView && !fillHeight ? 300 : undefined}
                       onChartClick={handleChartClick}
+                      chartTitle={chartTitle}
+                      showChartTitle={showChartTitle}
                     />
                   )}
                   {chartType === 'scatter' && (
@@ -519,6 +528,8 @@ export const ChartBuilder = ({ columns, types, rows, chartType, initialXCols, in
                       yAxisColumns={yAxisColumns}
                       height={useCompactView && !fillHeight ? 300 : undefined}
                       onChartClick={handleChartClick}
+                      chartTitle={chartTitle}
+                      showChartTitle={showChartTitle}
                     />
                   )}
                   {chartType === 'funnel' && (
@@ -532,6 +543,8 @@ export const ChartBuilder = ({ columns, types, rows, chartType, initialXCols, in
                       yAxisColumns={yAxisColumns}
                       height={useCompactView && !fillHeight ? 300 : undefined}
                       onChartClick={handleChartClick}
+                      chartTitle={chartTitle}
+                      showChartTitle={showChartTitle}
                     />
                   )}
                   {chartType === 'pie' && (
@@ -545,30 +558,37 @@ export const ChartBuilder = ({ columns, types, rows, chartType, initialXCols, in
                       yAxisColumns={yAxisColumns}
                       height={useCompactView && !fillHeight ? 300 : undefined}
                       onChartClick={handleChartClick}
+                      chartTitle={chartTitle}
+                      showChartTitle={showChartTitle}
                     />
                   )}
                   {chartType === 'trend' && (
                     <TrendPlot series={aggregatedData.series} columnFormats={columnFormats} yAxisColumns={yAxisColumns} />
                   )}
+                  {chartType === 'waterfall' && (
+                    <WaterfallPlot
+                      xAxisData={aggregatedData.xAxisData}
+                      series={aggregatedData.series}
+                      xAxisLabel={getDisplayName(xAxisColumns[0])}
+                      yAxisLabel={buildYAxisLabel(yAxisColumns)}
+                      xAxisColumns={xAxisColumns}
+                      columnFormats={columnFormats}
+                      yAxisColumns={yAxisColumns}
+                      height={useCompactView && !fillHeight ? 300 : undefined}
+                      onChartClick={handleChartClick}
+                      chartTitle={chartTitle}
+                      showChartTitle={showChartTitle}
+                    />
+                  )}
                 </Box>
               )}
             </>
           ) : (
-            <Box
-              display="flex"
-              alignItems="center"
-              justifyContent="center"
-              height="100%"
-              color="fg.muted"
-              fontSize="sm"
-            >
-              <VStack gap={2}>
-                <Text fontWeight="600">No data to display</Text>
-                <Text fontSize="xs" color="fg.subtle">
-                  Drag at least one column to Y Axis to see aggregated values
-                </Text>
-              </VStack>
-            </Box>
+            <ChartError
+              variant="info"
+              title="No data to display"
+              message="Drag at least one column to Y Axis to see aggregated values"
+            />
           )}
         </Box>
       </VStack>

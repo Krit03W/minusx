@@ -23,6 +23,7 @@ export interface ContainerConfig {
     showTypeButtons: boolean;
     showChartBuilder: boolean;
     typesButtonsOrientation: 'horizontal' | 'vertical';
+    showTitle: boolean;
   };
     fixError: boolean;
 }
@@ -88,6 +89,8 @@ export function QuestionVisualization({
 
   const useCompactLayout = config.viz.typesButtonsOrientation === 'horizontal';
   const isChartType = currentState?.vizSettings?.type && currentState.vizSettings.type !== 'table';
+
+  const showChartTitle = config.viz.showTitle;
   return (
     <VStack gap={0} width="full" align="stretch" flex="1" overflow="hidden"
     borderRadius={'lg'} border={'1px solid'} borderColor={'border.muted'}>
@@ -290,7 +293,8 @@ export function QuestionVisualization({
                   currentState?.vizSettings?.type === 'funnel' ||
                   currentState?.vizSettings?.type === 'pie' ||
                   currentState?.vizSettings?.type === 'pivot' ||
-                  currentState?.vizSettings?.type === 'trend') && (
+                  currentState?.vizSettings?.type === 'trend' ||
+                  currentState?.vizSettings?.type === 'waterfall') && (
                   <Box flex="1" width="100%" overflow="hidden" minHeight="0" display="flex">
                     <ChartBuilder
                       columns={data.columns}
@@ -310,6 +314,7 @@ export function QuestionVisualization({
                       initialColumnFormats={currentState.vizSettings?.columnFormats ?? undefined}
                       onColumnFormatsChange={onColumnFormatsChange}
                       settingsExpanded={useCompactLayout ? vizSettingsExpanded : undefined}
+                      showChartTitle={showChartTitle}
                     />
                   </Box>
                 )}

@@ -4,6 +4,7 @@ import { LuArrowRightLeft } from 'react-icons/lu'
 import { useAppSelector } from '@/store/hooks'
 import { EChart } from './EChart'
 import { useChartContainer } from './useChartContainer'
+import { ChartError } from './ChartError'
 import { isValidChartData, resolveChartFormats, buildToolbox, getTimestamp, type ChartProps } from '@/lib/chart/chart-utils'
 import { withMinusXTheme, COLOR_PALETTE } from '@/lib/chart/echarts-theme'
 import type { EChartsOption } from 'echarts'
@@ -19,7 +20,7 @@ interface FunnelPlotProps extends ChartProps {
 }
 
 export const FunnelPlot = (props: FunnelPlotProps) => {
-  const { xAxisData, series, emptyMessage, onChartClick, columnFormats, yAxisColumns, xAxisColumns } = props
+  const { xAxisData, series, emptyMessage, onChartClick, columnFormats, yAxisColumns, xAxisColumns, chartTitle, showChartTitle = true } = props
   const colorMode = useAppSelector((state) => state.ui.colorMode)
   const { containerRef, containerWidth, containerHeight, chartEvents } = useChartContainer(onChartClick)
   const [orientation, setOrientation] = useState<'horizontal' | 'vertical'>('horizontal')
@@ -94,7 +95,8 @@ export const FunnelPlot = (props: FunnelPlotProps) => {
     }
 
     const baseOption: EChartsOption = {
-      toolbox: buildToolbox(colorMode, downloadCsv),
+      ...(chartTitle ? { title: { text: chartTitle, left: 'center', top: 5, show: showChartTitle } } : {}),
+      toolbox: buildToolbox(colorMode, downloadCsv, chartTitle),
       tooltip: {
         trigger: 'item',
         appendToBody: true,
@@ -109,7 +111,7 @@ export const FunnelPlot = (props: FunnelPlotProps) => {
       },
       legend: {
         data: funnelData.map(d => d.name),
-        top: 10,
+        top: chartTitle && showChartTitle ? 35 : 10,
         orient: 'horizontal',
         type: funnelData.length > 10 ? 'scroll' : 'plain',
         pageIconSize: 10,
@@ -162,6 +164,14 @@ export const FunnelPlot = (props: FunnelPlotProps) => {
 
     return withMinusXTheme(baseOption, colorMode)
   }, [xAxisData, series, colorMode, containerWidth, containerHeight, orientation, fmtName, fmtValue])
+
+  if ((xAxisColumns?.length ?? 0) > 1) {
+    return <ChartError message="Funnel charts support only a single X-axis column. Remove extra columns from the X axis to continue." />
+  }
+
+  if ((yAxisColumns?.length ?? 0) > 1) {
+    return <ChartError message="Funnel charts support only a single Y-axis column. Remove extra columns from the Y axis to continue." />
+  }
 
   if (!isValidChartData(xAxisData, series)) {
     return (

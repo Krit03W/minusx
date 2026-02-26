@@ -3,6 +3,7 @@ import { Box } from '@chakra-ui/react'
 import { useAppSelector } from '@/store/hooks'
 import { EChart } from './EChart'
 import { useChartContainer } from './useChartContainer'
+import { ChartError } from './ChartError'
 import { isValidChartData, resolveChartFormats, buildToolbox, getTimestamp, type ChartProps } from '@/lib/chart/chart-utils'
 import { withMinusXTheme, COLOR_PALETTE } from '@/lib/chart/echarts-theme'
 import type { EChartsOption } from 'echarts'
@@ -12,7 +13,7 @@ interface PiePlotProps extends ChartProps {
 }
 
 export const PiePlot = (props: PiePlotProps) => {
-  const { xAxisData, series, emptyMessage, onChartClick, columnFormats, yAxisColumns, xAxisColumns } = props
+  const { xAxisData, series, emptyMessage, onChartClick, columnFormats, yAxisColumns, xAxisColumns, chartTitle, showChartTitle = true } = props
   const colorMode = useAppSelector((state) => state.ui.colorMode)
   const { containerRef, containerWidth, containerHeight, chartEvents } = useChartContainer(onChartClick)
 
@@ -77,7 +78,8 @@ export const PiePlot = (props: PiePlotProps) => {
     }
 
     const baseOption: EChartsOption = {
-      toolbox: buildToolbox(colorMode, downloadCsv),
+      ...(chartTitle ? { title: { text: chartTitle, left: 'center', top: 5, show: showChartTitle } } : {}),
+      toolbox: buildToolbox(colorMode, downloadCsv, chartTitle),
       tooltip: {
         trigger: 'item',
         appendToBody: true,
@@ -90,7 +92,7 @@ export const PiePlot = (props: PiePlotProps) => {
       },
       legend: {
         data: pieData.map(d => d.name),
-        top: 10,
+        top: chartTitle && showChartTitle ? 35 : 10,
         orient: 'horizontal',
         type: pieData.length > 10 ? 'scroll' : 'plain',
         pageIconSize: 10,
@@ -144,6 +146,14 @@ export const PiePlot = (props: PiePlotProps) => {
 
     return withMinusXTheme(baseOption, colorMode)
   }, [xAxisData, series, colorMode, containerWidth, containerHeight, fmtName, fmtValue])
+
+  if ((xAxisColumns?.length ?? 0) > 1) {
+    return <ChartError message="Pie charts support only a single X-axis column. Remove extra columns from the X axis to continue." />
+  }
+
+  if ((yAxisColumns?.length ?? 0) > 1) {
+    return <ChartError message="Pie charts support only a single Y-axis column. Remove extra columns from the Y axis to continue." />
+  }
 
   if (!isValidChartData(xAxisData, series)) {
     return (
