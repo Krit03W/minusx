@@ -9,6 +9,15 @@ const nextConfig: NextConfig = {
   // 'duckdb' is the native Node.js DuckDB package used for server-side analytics
   serverExternalPackages: ['@duckdb/duckdb-wasm', 'duckdb'],
 
+  // Belt-and-suspenders: explicitly externalize duckdb in webpack config too.
+  // serverExternalPackages handles Turbopack; this handles webpack (used in --no-turbopack builds).
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      config.externals = [...(Array.isArray(config.externals) ? config.externals : [config.externals].filter(Boolean)), 'duckdb'];
+    }
+    return config;
+  },
+
   experimental: {
     // Enable optimized package imports to reduce bundle size
     optimizePackageImports: ['@chakra-ui/react', 'react-icons'],
