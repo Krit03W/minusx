@@ -1,6 +1,7 @@
 import { createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit';
 import type { DbFile, FileType, DocumentContent, AssetReference, QuestionContent, QuestionReference } from '@/lib/types';
 import type { FileInfo } from '@/lib/data/types';
+import type { FileAnalyticsSummary } from '@/lib/analytics/file-analytics.types';
 import type { RootState } from './store';
 import { getQueryHash } from '@/lib/utils/query-hash';
 import type { LoadError } from '@/lib/types/errors';
@@ -43,6 +44,9 @@ export interface FileState extends DbFile {
   persistableChanges: Partial<DbFile['content']>;
   ephemeralChanges: EphemeralChanges;
   metadataChanges: { name?: string; path?: string }; // Phase 5: Metadata edits
+
+  // Analytics summary (loaded alongside the file, never blocks file loading)
+  analytics?: FileAnalyticsSummary | null;
 }
 
 /**
@@ -128,13 +132,14 @@ const filesSlice = createSlice({
     setFile(state, action: PayloadAction<{
       file: DbFile;
       references?: DbFile[];
+      analytics?: FileAnalyticsSummary | null;
     }>) {
       const { file, references = [] } = action.payload;
 
       // Extract references from content
       const referenceIds = extractReferences(file);
 
-      // Store the main file
+      // Store the main file — preserve existing analytics when not explicitly provided
       state.files[file.id] = {
         ...file,
         references: referenceIds,
@@ -144,7 +149,10 @@ const filesSlice = createSlice({
         loadError: null,
         persistableChanges: {},
         ephemeralChanges: {},
-        metadataChanges: {}
+        metadataChanges: {},
+        analytics: 'analytics' in action.payload
+          ? action.payload.analytics
+          : state.files[file.id]?.analytics,
       };
 
       // Update path index (only for real files with positive IDs)
@@ -184,8 +192,9 @@ const filesSlice = createSlice({
     setFiles(state, action: PayloadAction<{
       files: DbFile[];
       references?: DbFile[];
+      analyticsMap?: Record<number, FileAnalyticsSummary>;
     }>) {
-      const { files, references = [] } = action.payload;
+      const { files, references = [], analyticsMap } = action.payload;
 
       // Store all main files
       files.forEach(file => {
@@ -201,6 +210,10 @@ const filesSlice = createSlice({
           ephemeralChanges: {},
           metadataChanges: {}
         };
+
+        if (analyticsMap?.[file.id] !== undefined) {
+          state.files[file.id].analytics = analyticsMap[file.id];
+        }
 
         // Update path index
         state.pathIndex[file.path] = file.id;
