@@ -36,8 +36,8 @@ export const GET = withAuth(async (request: NextRequest, user) => {
     // Get target versions
     const { dataVersion: targetDataVersion, schemaVersion: targetSchemaVersion } = getTargetVersions();
 
-    // Export and validate
-    const exportData = await exportDatabase(DB_PATH);
+    // Export and validate — scoped to the authenticated user's company only
+    const exportData = await exportDatabase(DB_PATH, user.companyId);
     const validation = validateInitData(exportData);
 
     return NextResponse.json({
