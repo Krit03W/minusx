@@ -18,9 +18,13 @@ export function filterSchemaByWhitelist(
 ): DatabaseSchema {
   // Filter whitelist items by childPaths BEFORE creating lookup sets
   const applicableWhitelist = whitelist.filter(item => {
-    // If no childPaths specified, apply to all children (backward compatible)
-    if (!item.childPaths || item.childPaths.length === 0) {
+    // If childPaths is undefined/null, apply to all children (backward compatible)
+    // If childPaths is [] (empty array), apply to NO children (only this folder)
+    if (!item.childPaths) {
       return true;
+    }
+    if (item.childPaths.length === 0) {
+      return false;
     }
     // If currentPath not provided, include all (for non-child contexts)
     if (!currentPath) {
@@ -231,6 +235,11 @@ export function getDocumentationForUser(
   contextContent: ContextContent,
   userId: number
 ): string | undefined {
+  // Collect inherited docs (fullDocs) filtered by childPaths (already filtered by loader)
+  const inheritedDocStrings = (contextContent.fullDocs || []).map(doc =>
+    typeof doc === 'string' ? doc : doc.content
+  );
+
   // Get user's published version and return its docs
   if (contextContent.versions && contextContent.versions.length > 0) {
     const publishedVersionNum = getPublishedVersionForUser(contextContent, userId);
@@ -238,17 +247,14 @@ export function getDocumentationForUser(
 
     if (publishedVersion && publishedVersion.docs) {
       // Handle DocEntry[] format (post-migration v11)
-      const docStrings = publishedVersion.docs.map(doc =>
+      const ownDocStrings = publishedVersion.docs.map(doc =>
         typeof doc === 'string' ? doc : doc.content
       );
-      return docStrings.join('\n\n---\n\n') || undefined;
+      const allDocStrings = [...inheritedDocStrings, ...ownDocStrings].filter(Boolean);
+      return allDocStrings.length > 0 ? allDocStrings.join('\n\n---\n\n') : undefined;
     }
   }
 
-  // Legacy fallback for contexts without versions
-  if (contextContent.fullDocs) {
-    return contextContent.fullDocs.join('\n\n---\n\n') || undefined;
-  }
-
-  return undefined;
+  // Legacy fallback or no own docs — return inherited only
+  return inheritedDocStrings.length > 0 ? inheritedDocStrings.join('\n\n---\n\n') : undefined;
 }

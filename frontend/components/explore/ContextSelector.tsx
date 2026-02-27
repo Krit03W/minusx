@@ -48,9 +48,9 @@ export function ContextSelector({ selectedContextPath, selectedVersion, onSelect
   });
   const homeContextPath = homeContext?.path;
 
+  // Auto-select home context only when nothing is selected yet (initial mount)
   useEffect(() => {
-    if ((!selectedContextPath || !selectedVersion) && homeContextPath) {
-      // Auto-select published version if available
+    if (!selectedContextPath && homeContextPath) {
       const content = homeContext?.content as ContextContent | undefined;
       const publishedVersion = content?.published?.all;
       if (publishedVersion) {

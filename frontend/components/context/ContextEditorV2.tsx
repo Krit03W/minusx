@@ -6,9 +6,9 @@
  * All changes go through onChange immediately
  */
 
-import { Box, VStack, Heading, HStack, Button, Text, SimpleGrid, Badge, Menu, Input, Dialog, Field, Portal } from '@chakra-ui/react';
-import { useState, useEffect, useMemo } from 'react';
-import { LuCircleAlert, LuCircleCheck, LuPlus, LuTrash2, LuChevronDown, LuGlobe } from 'react-icons/lu';
+import { Box, VStack, Heading, HStack, Button, Text, SimpleGrid, Badge, Menu, Input, Dialog, Field, Portal, Collapsible, Icon } from '@chakra-ui/react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { LuCircleAlert, LuCircleCheck, LuPlus, LuTrash2, LuChevronDown, LuGlobe, LuChevronRight } from 'react-icons/lu';
 import { ContextContent, DatabaseContext, WhitelistItem, ContextVersion, PublishedVersions, DocEntry } from '@/lib/types';
 import { serializeDatabases, parseDatabasesYaml, canDeleteVersion } from '@/lib/context/context-utils';
 import SchemaTreeView from '../SchemaTreeView';
@@ -17,6 +17,7 @@ import Editor from '@monaco-editor/react';
 import Markdown from '../Markdown';
 import DocumentHeader from '../DocumentHeader';
 import { useAppSelector } from '@/store/hooks';
+import { HIDDEN_SYSTEM_FOLDERS } from '@/lib/mode/path-resolver';
 
 interface ContextEditorV2Props {
   content: ContextContent;
@@ -83,6 +84,10 @@ export default function ContextEditorV2({
   const [versionToDelete, setVersionToDelete] = useState<number | null>(null);
   const [deleteErrorMessage, setDeleteErrorMessage] = useState<string | null>(null);
 
+  // Collapsible database state
+  const [expandedDatabases, setExpandedDatabases] = useState<Set<string>>(new Set());
+  const hasInitializedExpanded = useRef(false);
+
   // Get connections loading state from Redux (for loading indicator)
   const isLoading = useAppSelector(state =>
     Object.values(state.files.files).some(f => f.type === 'connection' && f.loading)
@@ -90,29 +95,55 @@ export default function ContextEditorV2({
 
   // Use fullSchema from content (what parent makes available)
   // This ensures hierarchical filtering - children can only whitelist from parent's whitelist
-  const availableDatabases = content.fullSchema || [];
+  // Filter out databases with no schemas (not exposed from parent)
+  const availableDatabases = (content.fullSchema || []).filter(db => db.schemas.length > 0);
 
   // Compute immediate child paths for path filtering UI
   const availableChildPaths = useMemo(() => {
     if (!file?.path) return [];
 
-    // Get all context files
-    const allContextFiles = Object.values(filesState).filter(f => f.type === 'context');
+    // Get all child folders (any folder, not just ones with a knowledge base)
+    // Exclude hidden system folders (database, configs, logs, etc.)
+    const hiddenNames = new Set(HIDDEN_SYSTEM_FOLDERS.map(f => f.replace('/', '')));
+    const allFolders = Object.values(filesState).filter(f => f.type === 'folder');
 
-    // Find immediate children (one level deep)
+    // Find immediate child folders (one level deep)
     const fileDir = file.path.substring(0, file.path.lastIndexOf('/')) || '/';
-    const children = allContextFiles
+    const children = allFolders
       .filter(f => {
-        const childDir = f.path.substring(0, f.path.lastIndexOf('/')) || '/';
-        const relativePath = childDir.substring(fileDir.length);
+        const relativePath = f.path.substring(fileDir.length);
         if (!relativePath.startsWith('/')) return false;
         const segments = relativePath.split('/').filter(Boolean);
-        return segments.length === 1; // Immediate child
+        if (segments.length !== 1) return false; // Immediate child only
+        return !hiddenNames.has(segments[0]); // Exclude system folders
       })
-      .map(f => f.path.substring(0, f.path.lastIndexOf('/')) || '/');
+      .map(f => f.path);
 
     return Array.from(new Set(children)).sort();
   }, [file?.path, filesState]);
+
+  // Auto-expand/collapse databases on first load
+  useEffect(() => {
+    if (hasInitializedExpanded.current || availableDatabases.length === 0) return;
+    hasInitializedExpanded.current = true;
+    if (availableDatabases.length <= 2) {
+      setExpandedDatabases(new Set(availableDatabases.map(db => db.databaseName)));
+    } else {
+      setExpandedDatabases(new Set());
+    }
+  }, [availableDatabases]);
+
+  const toggleDatabase = (name: string) => {
+    setExpandedDatabases(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) {
+        next.delete(name);
+      } else {
+        next.add(name);
+      }
+      return next;
+    });
+  };
 
   // Initialize databases array if empty when availableDatabases loads
   useEffect(() => {
@@ -274,7 +305,7 @@ export default function ContextEditorV2({
   return (
     <VStack gap={6} align="stretch" p={3}>
       {/* Document Header */}
-      <Box borderBottomWidth="1px" borderColor="border.muted" pb={2}>
+      <Box borderBottomWidth="1px" borderColor="border.muted" pb={2} position="sticky" top={0} zIndex={10} bg="bg.canvas" mx={-3} px={3}>
         <DocumentHeader
           name={fileName}
           fileType="context"
@@ -516,16 +547,27 @@ export default function ContextEditorV2({
               <Heading size="md">
                 Database Connections
               </Heading>
-              {!isLoading && totalWhitelisted === 0 && (
-                <HStack gap={1} color="accent.warning">
-                  <LuCircleAlert size={16} />
-                  <Text fontSize="sm" fontWeight="500">No schemas/tables whitelisted</Text>
-                </HStack>
-              )}
             </HStack>
             <Text fontSize="sm" color="fg.muted" mb={3}>
               Whitelist schemas and tables from the available database connections
             </Text>
+            {!isLoading && availableDatabases.length > 0 && totalWhitelisted === 0 && (
+              <Box
+                p={3}
+                mb={3}
+                bg="accent.warning/10"
+                borderLeft="3px solid"
+                borderColor="accent.warning"
+                borderRadius="md"
+              >
+                <HStack gap={2}>
+                  <LuCircleAlert color="var(--chakra-colors-accent-warning)" />
+                  <Text color="accent.warning" fontSize="sm">
+                    No schemas or tables whitelisted. Select at least one schema or table below to make data available for this context.
+                  </Text>
+                </HStack>
+              </Box>
+            )}
             {isLoading ? (
               <Box p={8} textAlign="center">
                 <Text color="fg.muted">Loading context...</Text>
@@ -541,6 +583,17 @@ export default function ContextEditorV2({
                   const dbContext = databases.find(db => db.databaseName === database.databaseName);
                   const whitelist = dbContext?.whitelist || [];
 
+                  const isExpanded = expandedDatabases.has(database.databaseName);
+                  const whitelistedSchemas = whitelist.filter(w => w.type === 'schema');
+                  const whitelistedTables = whitelist.filter(w => w.type === 'table');
+                  const totalTables = database.schemas.reduce((sum, s) => sum + s.tables.length, 0);
+                  // Tables covered by schema-level whitelists + individually whitelisted tables
+                  const tablesFromSchemas = database.schemas
+                    .filter(s => whitelistedSchemas.some(ws => ws.name === s.schema))
+                    .reduce((sum, s) => sum + s.tables.length, 0);
+                  const effectiveTableCount = tablesFromSchemas + whitelistedTables.length;
+                  const hasAny = effectiveTableCount > 0;
+
                   return (
                     <Box
                       key={database.databaseName}
@@ -550,45 +603,67 @@ export default function ContextEditorV2({
                       overflow="hidden"
                       bg="bg.surface"
                     >
-                      <Box
-                        px={4}
-                        py={3}
-                        bg="bg.muted"
-                        borderBottom="1px solid"
-                        borderColor="border.default"
-                      >
-                        <HStack justify="space-between">
-                          <Text
-                            fontSize="md"
-                            fontWeight="700"
-                            color="fg.default"
-                            fontFamily="mono"
+                      <Collapsible.Root open={isExpanded} onOpenChange={() => toggleDatabase(database.databaseName)}>
+                        <Collapsible.Trigger asChild>
+                          <Box
+                            px={4}
+                            py={3}
+                            bg="bg.muted"
+                            cursor="pointer"
+                            _hover={{ bg: 'bg.emphasized' }}
+                            {...(isExpanded ? { borderBottom: '1px solid', borderColor: 'border.default' } : {})}
                           >
-                            {database.databaseName}
-                          </Text>
-                          <Text
-                            fontSize="xs"
-                            color="fg.muted"
-                            fontFamily="mono"
-                          >
-                            {whitelist.length} whitelisted
-                          </Text>
-                        </HStack>
-                      </Box>
-                      <Box p={4}>
-                        <SchemaTreeView
-                          schemas={database.schemas}
-                          selectable={true}
-                          whitelist={whitelist}
-                          onWhitelistChange={(newWhitelist) =>
-                            handleWhitelistChange(database.databaseName, newWhitelist)
-                          }
-                          showColumns={true}
-                          showStats={true}
-                          showPathFilter={true}
-                          availableChildPaths={availableChildPaths}
-                        />
-                      </Box>
+                            <HStack gap={2}>
+                              <Icon
+                                as={isExpanded ? LuChevronDown : LuChevronRight}
+                                boxSize={4}
+                                color="fg.muted"
+                              />
+                              <Text
+                                fontSize="md"
+                                fontWeight="700"
+                                color="fg.default"
+                                fontFamily="mono"
+                              >
+                                {database.databaseName}
+                              </Text>
+                              <Box
+                                px={2}
+                                py={0.5}
+                                bg={hasAny ? 'accent.cyan/15' : 'bg.canvas'}
+                                borderRadius="sm"
+                                border="1px solid"
+                                borderColor={hasAny ? 'accent.cyan/30' : 'border.muted'}
+                              >
+                                <Text
+                                  fontSize="2xs"
+                                  fontWeight="700"
+                                  color={hasAny ? 'accent.cyan' : 'fg.subtle'}
+                                  fontFamily="mono"
+                                >
+                                  {effectiveTableCount}/{totalTables} {totalTables === 1 ? 'table' : 'tables'}
+                                </Text>
+                              </Box>
+                            </HStack>
+                          </Box>
+                        </Collapsible.Trigger>
+                        <Collapsible.Content>
+                          <Box p={4}>
+                            <SchemaTreeView
+                              schemas={database.schemas}
+                              selectable={true}
+                              whitelist={whitelist}
+                              onWhitelistChange={(newWhitelist) =>
+                                handleWhitelistChange(database.databaseName, newWhitelist)
+                              }
+                              showColumns={true}
+                              showStats={true}
+                              showPathFilter={true}
+                              availableChildPaths={availableChildPaths}
+                            />
+                          </Box>
+                        </Collapsible.Content>
+                      </Collapsible.Root>
                     </Box>
                   );
                 })}
