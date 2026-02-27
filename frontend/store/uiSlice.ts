@@ -25,6 +25,17 @@ interface UIState {
   modalFile: { fileId: number; state: 'ACTIVE' | 'COLLAPSED' } | null;
 }
 
+const getPersistedBool = (key: string, fallback: boolean): boolean => {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored === null) return fallback;
+    return stored === 'true';
+  } catch {
+    return fallback;
+  }
+};
+
 // Load persisted toolset from localStorage (with SSR safety)
 const getPersistedToolset = (): 'classic' | 'native' => {
   if (typeof window === 'undefined') return 'classic';
@@ -36,6 +47,7 @@ const getPersistedToolset = (): 'classic' | 'native' => {
   }
 };
 
+
 const initialState: UIState = {
   leftSidebarCollapsed: false,
   rightSidebarCollapsed: true,
@@ -45,8 +57,8 @@ const initialState: UIState = {
   sidebarPendingMessage: null,
   activeSidebarSection: null,
   askForConfirmation: false,
-  showDebug: false,
-  showJson: false,
+  showDebug: getPersistedBool('showDebug', false),
+  showJson: getPersistedBool('showJson', false),
   gettingStartedCollapsed: false,
   dashboardEditMode: {},
   fileEditMode: {},
@@ -104,9 +116,15 @@ const uiSlice = createSlice({
     },
     setShowDebug: (state, action: PayloadAction<boolean>) => {
       state.showDebug = action.payload;
+      if (typeof window !== 'undefined') {
+        try { localStorage.setItem('showDebug', String(action.payload)); } catch { /* ignore */ }
+      }
     },
     setShowJson: (state, action: PayloadAction<boolean>) => {
       state.showJson = action.payload;
+      if (typeof window !== 'undefined') {
+        try { localStorage.setItem('showJson', String(action.payload)); } catch { /* ignore */ }
+      }
     },
     setGettingStartedCollapsed: (state, action: PayloadAction<boolean>) => {
       state.gettingStartedCollapsed = action.payload;

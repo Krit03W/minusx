@@ -6,7 +6,6 @@ import { LuRefreshCw } from 'react-icons/lu';
 import { ColorModeButton } from '@/components/ui/color-mode';
 import { useAppSelector, useAppDispatch } from '@/store/hooks';
 import { setAskForConfirmation, setShowDebug, setShowJson, setSelectedToolset } from '@/store/uiSlice';
-import { IS_DEV } from '@/lib/constants';
 import RecordingControl from '@/components/RecordingControl';
 import DataManagementSection from '@/components/DataManagementSection';
 import { toaster } from '@/components/ui/toaster';
@@ -81,7 +80,7 @@ export default function SettingsPage() {
   const [isClearing, setIsClearing] = useState(false);
 
   const isAdmin = user?.role === 'admin';
-  const showDebugOption = isAdmin && IS_DEV;
+  const showDebugOption = isAdmin;
 
   const handleClearCache = async () => {
     setIsClearing(true);
