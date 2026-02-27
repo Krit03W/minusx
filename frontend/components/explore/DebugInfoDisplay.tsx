@@ -1,109 +1,96 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Box, HStack, VStack, Text, IconButton, Icon, Badge, Spinner } from '@chakra-ui/react';
-import { LuBug, LuChevronDown, LuChevronRight, LuClock, LuCpu, LuDollarSign } from 'react-icons/lu';
+import { LuBug, LuChevronDown, LuChevronRight, LuClock, LuCpu } from 'react-icons/lu';
 import type { MessageDebugInfo } from '@/lib/types';
 import { useAppSelector } from '@/store/hooks';
-import { selectEffectiveUser } from '@/store/authSlice';
 import { selectShowDebug } from '@/store/uiSlice';
+import { selectEffectiveUser } from '@/store/authSlice';
 import { isAdmin } from '@/lib/auth/role-helpers';
-import { useFileByPath } from '@/lib/hooks/file-state-hooks';
-import { resolvePath } from '@/lib/mode/path-resolver';
-import type { LLMCallFileContent } from '@/lib/llm-persistence';
-import type { Mode } from '@/lib/mode/mode-types';
+import { getLLMLogStats, type LLMLogStats } from '@/lib/api/llm-calls';
 
 interface DebugInfoDisplayProps {
   debugInfo: MessageDebugInfo;
 }
 
+function StatsTable({ stats }: { stats: Record<string, unknown> }) {
+  const rows = Object.entries(stats).filter(([k]) => k !== 'id');
+  return (
+    <Box overflowX="auto">
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <tbody>
+          {rows.map(([key, value]) => (
+            <tr key={key}>
+              <td style={{ padding: '1px 12px 1px 0', whiteSpace: 'nowrap', verticalAlign: 'top', opacity: 0.6, fontFamily: 'monospace', fontSize: '11px' }}>
+                {key}
+              </td>
+              <td style={{ padding: '1px 0', fontFamily: 'monospace', fontSize: '11px', wordBreak: 'break-all' }}>
+                {String(value ?? '—')}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Box>
+  );
+}
+
+function JsonSection({ title, raw }: { title: string; raw: string }) {
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch { parsed = raw; }
+  return (
+    <Box>
+      <Text fontSize="2xs" fontWeight="600" color="fg.muted" mb={0.5}>{title}</Text>
+      <Box p={1.5} bg="bg.surface" borderRadius="sm" fontFamily="mono" fontSize="2xs" overflowX="auto" maxH="300px" overflowY="auto">
+        <pre>{JSON.stringify(parsed, null, 2)}</pre>
+      </Box>
+    </Box>
+  );
+}
+
 /**
- * Component to load and display LLM call details from persisted file
+ * Component to load and display LLM call details from MX proxy API
  */
-function LLMCallDetails({ llmCallId, userId, mode }: { llmCallId: string; userId: string; mode: Mode }) {
-  const path = resolvePath(mode, `/logs/llm_calls/${userId}/${llmCallId}.json`);
-  const { file, loading, error } = useFileByPath(path);
+function LLMCallMXDetails({ llmCallId }: { llmCallId: string }) {
+  const [data, setData] = useState<LLMLogStats | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [fetched, setFetched] = useState(false);
+
+  useEffect(() => {
+    if (fetched) return;
+    setFetched(true);
+    setLoading(true);
+    getLLMLogStats(llmCallId)
+      .then((result) => setData(result))
+      .finally(() => setLoading(false));
+  }, [llmCallId, fetched]);
 
   if (loading) {
     return (
       <HStack gap={2} p={2} justify="center">
         <Spinner size="sm" />
-        <Text fontSize="2xs" color="fg.subtle">Loading full request/response...</Text>
+        <Text fontSize="2xs" color="fg.subtle">Loading request/response...</Text>
       </HStack>
     );
   }
 
-  if (error) {
+  if (!data || (!data.stats && !data.logs)) {
     return (
-      <VStack gap={1} p={2} align="stretch">
-        <Text fontSize="2xs" color="accent.danger">
-          Failed to load LLM call details: {error.message}
-        </Text>
-        <Text fontSize="2xs" color="fg.subtle" fontFamily="mono">
-          Path: {path}
-        </Text>
-      </VStack>
+      <Text fontSize="2xs" color="fg.subtle" fontStyle="italic">
+        Not available
+      </Text>
     );
   }
 
-  if (!file) {
-    return (
-      <VStack gap={1} p={2} align="stretch">
-        <Text fontSize="2xs" color="fg.subtle">
-          No persisted data found for this LLM call
-        </Text>
-        <Text fontSize="2xs" color="fg.subtle" fontFamily="mono">
-          Path: {path}
-        </Text>
-      </VStack>
-    );
-  }
-
-  // Verify it's an LLM call file
-  if (file.fileState.type !== 'llm_call') {
-    return (
-      <Box p={2}>
-        <Text fontSize="2xs" color="accent.danger">
-          Error: File at path is not an LLM call file (type: {file.fileState.type})
-        </Text>
-      </Box>
-    );
-  }
-
-  const content = file.fileState.content as unknown as LLMCallFileContent;
+  const requestBody = data.logs?.request_body as string | undefined;
+  const responseBody = data.logs?.response_body as string | undefined;
 
   return (
     <VStack gap={2} align="stretch">
-      {/* Show conversation link */}
-      <Box>
-        <Text fontSize="2xs" fontWeight="600" color="fg.muted" mb={0.5}>
-          Conversation ID
-        </Text>
-        <Text fontFamily="mono" fontSize="2xs">
-          {content.conversationID}
-        </Text>
-      </Box>
-
-      {/* Show full extra data if available */}
-      {content.extra && (
-        <Box>
-          <Text fontSize="2xs" fontWeight="600" color="fg.muted" mb={0.5}>
-            Full Request/Response Data
-          </Text>
-          <Box
-            p={1.5}
-            bg="bg.surface"
-            borderRadius="sm"
-            fontFamily="mono"
-            fontSize="2xs"
-            overflowX="auto"
-            maxH="300px"
-            overflowY="auto"
-          >
-            <pre>{JSON.stringify(content.extra, null, 2)}</pre>
-          </Box>
-        </Box>
-      )}
+      {data.stats && <StatsTable stats={data.stats} />}
+      {requestBody && <JsonSection title="Request" raw={requestBody} />}
+      {responseBody && <JsonSection title="Response" raw={responseBody} />}
     </VStack>
   );
 }
@@ -193,7 +180,6 @@ export default function DebugInfoDisplay({ debugInfo }: DebugInfoDisplayProps) {
           </HStack>
 
           <HStack gap={1}>
-            {/* <Icon as={LuDollarSign} boxSize={3} /> */}
             <Text>{formatCost(totalCost)}</Text>
           </HStack>
 
@@ -349,39 +335,9 @@ export default function DebugInfoDisplay({ debugInfo }: DebugInfoDisplayProps) {
                         </Box>
                       )}
 
-                      {/* LLM Call Details - Load from persisted file */}
-                      {llm.lllm_call_id && effectiveUser && (
-                        <Box>
-                          <Text fontSize="2xs" fontWeight="600" color="fg.muted" mb={0.5}>
-                            Persisted LLM Call Data
-                          </Text>
-                          <LLMCallDetails
-                            llmCallId={llm.lllm_call_id}
-                            userId={effectiveUser.id.toString()}
-                            mode={effectiveUser.mode}
-                          />
-                        </Box>
-                      )}
-
-                      {/* Fallback: Show inline extra if no call ID */}
-                      {!llm.lllm_call_id && llm.extra && (
-                        <Box>
-                          <Text fontSize="2xs" fontWeight="600" color="fg.muted" mb={0.5}>
-                            Request/Response Data (Inline)
-                          </Text>
-                          <Box
-                            p={1.5}
-                            bg="bg.surface"
-                            borderRadius="sm"
-                            fontFamily="mono"
-                            fontSize="2xs"
-                            overflowX="auto"
-                            maxH="200px"
-                            overflowY="auto"
-                          >
-                            <pre>{JSON.stringify(llm.extra, null, 2)}</pre>
-                          </Box>
-                        </Box>
+                      {/* Stats + Request/Response from backend */}
+                      {llm.lllm_call_id && (
+                        <LLMCallMXDetails llmCallId={llm.lllm_call_id} />
                       )}
                     </VStack>
                   )}
