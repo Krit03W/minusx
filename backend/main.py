@@ -12,6 +12,7 @@ import logging
 import traceback
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List, Callable
+import os
 from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -20,7 +21,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 from connection_manager import connection_manager
 from connectors import get_async_connector

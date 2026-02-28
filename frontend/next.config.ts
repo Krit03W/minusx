@@ -1,4 +1,9 @@
 import type { NextConfig } from "next";
+import { config as dotenvConfig } from 'dotenv';
+import path from 'path';
+
+// Load .env from the root directory
+dotenvConfig({ path: path.resolve(__dirname, '../.env') });
 
 const nextConfig: NextConfig = {
   // Enable standalone output for optimized Docker deployments (60% smaller images)

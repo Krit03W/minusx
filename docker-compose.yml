@@ -15,7 +15,7 @@ services:
       - BASE_DUCKDB_DATA_PATH=/app
       - WORKERS=${WORKERS:-4}
     env_file:
-      - ./backend/.env
+      - .env
     networks:
       - minusx-network
     healthcheck:
@@ -42,7 +42,7 @@ services:
       - BASE_DUCKDB_DATA_PATH=/app
       - ANALYTICS_DB_DIR=/app/data/analytics
     env_file:
-      - ./frontend/.env
+      - .env
     depends_on:
       backend:
         condition: service_healthy
