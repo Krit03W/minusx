@@ -40,3 +40,5 @@ dbt is amazing. Semantic models are great. Still, less than ~10% of fast growing
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
 MinusX is Open Source Software and licensed under the AGPL-3.0 license. See [LICENSE](LICENSE) file for details.
+
+DriveD
