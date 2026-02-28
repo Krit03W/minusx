@@ -3,12 +3,12 @@
 import os
 
 # MODEL LIST 19-02-2026
-CODING_MODEL = "claude-sonnet-4-6"
-SUMMARIZE_FILTER_MODEL = "gpt-5-mini-2025-08-07"
+# CODING_MODEL = "claude-sonnet-4-6"
+# SUMMARIZE_FILTER_MODEL = "gpt-5-mini-2025-08-07"
 
 # Model configurations
-DEFAULT_MODEL = CODING_MODEL
-ANALYST_V2_MODEL = CODING_MODEL
+DEFAULT_MODEL = "gpt-4o"
+ANALYST_V2_MODEL = "gemini/gemini-2.5-flash"
 
 # Token and step limits
 MAX_TOKENS = 4000
@@ -27,3 +27,6 @@ HTTP_TIMEOUT = 120.0
 if MX_API_BASE_URL:
     os.environ.setdefault("ANTHROPIC_API_KEY", "NONE")
     os.environ.setdefault("OPENAI_API_KEY", "NONE")
+
+
+
