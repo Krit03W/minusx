@@ -1,0 +1,61 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: minusx-backend-prod
+    restart: always
+    # Volumes: Use named volumes for persistent data in production
+    volumes:
+      - minusx_data:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1
+      - NEXTJS_URL=http://frontend:3000
+      - BASE_DUCKDB_DATA_PATH=/app
+      - WORKERS=${WORKERS:-4}
+    env_file:
+      - .env
+    networks:
+      - minusx-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: minusx-frontend-prod
+    restart: always
+    ports:
+      - "3000:3000"
+    # Volumes: Use named volumes for persistent data in production
+    volumes:
+      - minusx_data:/app/data
+      - minusx_atlas_documents:/app/atlas_documents
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_BACKEND_URL=http://backend:8001
+      - BASE_DUCKDB_DATA_PATH=/app
+      - ANALYTICS_DB_DIR=/app/data/analytics
+    env_file:
+      - .env
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - minusx-network
+
+networks:
+  minusx-network:
+    name: minusx-network-prod
+    driver: bridge
+
+volumes:
+  minusx_data:
+    name: minusx_data_prod
+  minusx_atlas_documents:
+    name: minusx_atlas_documents_prod
