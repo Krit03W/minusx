@@ -20,8 +20,8 @@ COPY package*.json ./
 RUN rm -f package-lock.json && \
     npm install && \
     npm install --save-optional \
-      lightningcss-linux-x64-gnu \
-      @tailwindcss/oxide-linux-x64-gnu
+    lightningcss-linux-x64-gnu \
+    @tailwindcss/oxide-linux-x64-gnu
 
 # Copy application source
 COPY . .
@@ -30,7 +30,8 @@ COPY . .
 RUN mkdir -p data && npm run create-empty-db
 
 # Build Next.js application (generates .next/standalone)
-RUN npm run build
+# Use a dummy secret during build time to pass the strict env validation in lib/config.ts
+RUN NEXTAUTH_SECRET="dummy-secret-for-build-stage" npm run build
 
 # ===== RUNTIME STAGE ===== #
 FROM node:20-slim AS runner
