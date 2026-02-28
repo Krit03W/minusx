@@ -30,8 +30,6 @@ services:
       dockerfile: Dockerfile
     container_name: minusx-frontend-prod
     restart: always
-    ports:
-      - "3000:3000"
     # Volumes: Use named volumes for persistent data in production
     volumes:
       - minusx_data:/app/data
