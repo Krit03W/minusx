@@ -41,6 +41,8 @@ WORKDIR /app
 
 # Set production environment
 ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
 
 # Install curl and ca-certificates for downloading DuckDB files
 RUN apt-get update && apt-get install -y --no-install-recommends \
